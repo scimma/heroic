@@ -1,0 +1,89 @@
+[project]
+name = "heroic"  # must match PyPI package name
+description = "Heroic application server for observatory capabilities and status"
+authors = [
+    {name = "Scimma Project", email = "heroic@scimma.org"},
+]
+maintainers = [
+    {name = "Fabián Araneda-Baltierra", email = "fabs@illinois.edu"},
+    {name = "Jon Nation", email = "jnation@lco.global"},
+]
+license = "BSD 3-Clause"
+readme = "README.md"
+homepage = "https://github.com/scimma/heroic"
+repository = "https://github.com/scimma/heroic"
+documentation = "https://github.com/scimma/heroic/README.md"
+keywords = [
+    'SCIMMA',
+    'HEROIC',
+    'astronomy',
+    'astrophysics',
+    'cosmology',
+    'science',
+    'observatory',
+]
+classifiers = [
+    'Development Status :: 3 - Alpha',
+    'Intended Audience :: Science/Research',
+    'License :: OSI Approved :: BSD License',
+    'Operating System :: OS Independent',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Topic :: Scientific/Engineering :: Astronomy',
+    'Topic :: Scientific/Engineering :: Physics'
+]
+
+dynamic = ["version"]
+requires-python = ">=3.10.0,<3.13"
+dependencies = [
+    "django >5,<6",
+    "djangorestframework >=3.15,<4",
+    "django-extensions >=3.0.0,<4.0.0",
+    "django-filter >=23,<25",
+    "python-dateutil <3",
+    "requests <3"
+]
+
+[tool.poetry]
+packages = [ # tell poetry build that the repo is named heroic_base (which != name, above)
+    { include="heroic_api"},
+    { include="heroic_base"},
+    { include="*", format="sdist"},
+]
+version = "0.0.0" # version supplied by poetry-dynamic-versioning
+
+[tool.poetry.group.test.dependencies]
+
+
+[tool.poetry.group.docs.dependencies]
+
+
+[tool.poetry.group.coverage.dependencies]
+coverage = ">=6,<8" # coveralls needs ~6 even though 7.3.2 is latest
+coveralls = ">=3,<5"
+
+[tool.poetry.group.lint.dependencies]
+flake8 = ">=6.0,<7.2"
+
+[tool.poetry.requires-plugins]
+poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = ["plugin"] }
+
+[tool.poetry-dynamic-versioning]
+enable = true
+vcs = "git"
+style = "pep440"
+# the default pattern regex makes the 'v' manditory
+# this pattern modifies the default regex in order to make the 'v' optional
+# ('v' becomes '[v]?' meaning a single v, [v], and ? means optional)
+pattern = "(?x)^[v]?((?P<epoch>\\d+)!)?(?P<base>\\d+(\\.\\d+)*)([-._]?((?P<stage>[a-zA-Z]+)[-._]?(?P<revision>\\d+)?))?(\\+(?P<tagged_metadata>.+))?$"
+
+# substitute version not only in pyproject.toml (which the config block above does)
+# but also the __version__.py file (using the default value of the files property).
+[tool.poetry-dynamic-versioning.substitution]
+
+
+[build-system]
+requires = ["poetry-core >=1.0.0", "poetry-dynamic-versioning >=1.0.0, <2.0.0"]
+build-backend = "poetry_dynamic_versioning.backend"
