@@ -86,6 +86,8 @@ class TelescopeStatus(models.Model):
 
     class Meta:
         verbose_name_plural = 'Telescope Statuses'
+        get_latest_by = 'date'
+        ordering = ['-date']
 
     class StatusChoices(models.TextChoices):
         AVAILABLE = 'AVAILABLE', _('Available')
@@ -130,6 +132,8 @@ class InstrumentCapability(models.Model):
 
     class Meta:
         verbose_name_plural = 'Instrument Capabilities'
+        get_latest_by = 'date'
+        ordering = ['-date']
 
     class InstrumentStatus(models.TextChoices):
         AVAILABLE = 'AVAILABLE', _('Available')

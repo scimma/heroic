@@ -55,7 +55,7 @@ packages = [ # tell poetry build that the repo is named heroic_base (which != na
 version = "0.0.0" # version supplied by poetry-dynamic-versioning
 
 [tool.poetry.group.test.dependencies]
-
+mixer = "^7.2.2"
 
 [tool.poetry.group.docs.dependencies]
 
