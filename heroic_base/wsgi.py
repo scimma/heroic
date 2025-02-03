@@ -1,5 +1,5 @@
 """
-WSGI config for heroic_playground_api project.
+WSGI config for heroic_base project.
 
 It exposes the WSGI callable as a module-level variable named ``application``.
 
@@ -11,6 +11,6 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'heroic_playground_api.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'heroic_base.settings')
 
 application = get_wsgi_application()

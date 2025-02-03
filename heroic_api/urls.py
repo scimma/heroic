@@ -1,4 +1,4 @@
-from django.urls import path, include
+from django.urls import re_path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ObservatoryViewSet, SiteViewSet, TelescopeViewSet,
@@ -15,5 +15,5 @@ router.register(r'telescope-statuses', TelescopeStatusViewSet)
 router.register(r'instrument-capabilities', InstrumentCapabilityViewSet)
 
 urlpatterns = [
-    path('api/', include(router.urls)),
+    re_path(r'^', include(router.urls)),
 ]
