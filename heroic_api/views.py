@@ -1,27 +1,47 @@
 from rest_framework import viewsets
+from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from .models import Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability
-from .serializers import (
-    ObservatorySerializer, SiteSerializer, TelescopeSerializer,
+from django.contrib.auth.models import User
+
+from heroic_api.models import Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability
+from heroic_api.serializers import (
+    ObservatorySerializer, SiteSerializer, TelescopeSerializer, ProfileSerializer,
     InstrumentSerializer, TelescopeStatusSerializer, InstrumentCapabilitySerializer
 )
+from heroic_api.permissions import IsObservatoryAdminOrReadOnly, IsAdminOrReadOnly
+
+
+class ProfileAPIView(RetrieveUpdateAPIView):
+    serializer_class = ProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        """Once authenticated, retrieve profile data"""
+        qs = User.objects.filter(pk=self.request.user.pk).prefetch_related(
+            'profile'
+        )
+        return qs.first().profile
 
 
 class ObservatoryViewSet(viewsets.ModelViewSet):
     queryset = Observatory.objects.all()
     serializer_class = ObservatorySerializer
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class SiteViewSet(viewsets.ModelViewSet):
     queryset = Site.objects.all()
     serializer_class = SiteSerializer
+    permission_classes = [IsObservatoryAdminOrReadOnly]
 
 
 class TelescopeViewSet(viewsets.ModelViewSet):
     queryset = Telescope.objects.all()
     serializer_class = TelescopeSerializer
+    permission_classes = [IsObservatoryAdminOrReadOnly]
 
     @action(detail=True, methods=['get', 'post'])
     def status(self, request, pk=None):
@@ -42,6 +62,7 @@ class TelescopeViewSet(viewsets.ModelViewSet):
 class InstrumentViewSet(viewsets.ModelViewSet):
     queryset = Instrument.objects.all()
     serializer_class = InstrumentSerializer
+    permission_classes = [IsObservatoryAdminOrReadOnly]
 
     @action(detail=True, methods=['get', 'post'])
     def capabilities(self, request, pk=None):
@@ -62,8 +83,10 @@ class InstrumentViewSet(viewsets.ModelViewSet):
 class TelescopeStatusViewSet(viewsets.ModelViewSet):
     queryset = TelescopeStatus.objects.all()
     serializer_class = TelescopeStatusSerializer
+    permission_classes = [IsObservatoryAdminOrReadOnly]
 
 
 class InstrumentCapabilityViewSet(viewsets.ModelViewSet):
     queryset = InstrumentCapability.objects.all()
     serializer_class = InstrumentCapabilitySerializer
+    permission_classes = [IsObservatoryAdminOrReadOnly]

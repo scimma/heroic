@@ -9,18 +9,31 @@ from heroic_api import models
 class TestCreateApi(APITestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.user = mixer.blend(User)
+        self.user = mixer.blend(User, is_superuser=False)
         self.client.force_login(self.user)
-        self.observatory = mixer.blend(models.Observatory)
+        self.observatory = mixer.blend(models.Observatory, admin=self.user)
         self.site = mixer.blend(models.Site, observatory=self.observatory)
         self.telescope = mixer.blend(models.Telescope, site=self.site)
 
-    def test_create_observatory(self):
+    def test_create_observatory_works_for_superuser(self):
+        superuser = mixer.blend(User, is_superuser=True, is_staff=True)
+        self.client.force_login(superuser)
         observatory = {'id': 'LCO', 'name': 'Las Cumbres Observatory'}
         response = self.client.post(reverse('api:observatory-list'), data=observatory)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()['name'], observatory['name'])
         self.assertEqual(response.json()['id'], observatory['id'])
+
+    def test_create_observatory_with_non_superuser_fails(self):
+        observatory = {'id': 'LCO', 'name': 'Las Cumbres Observatory'}
+        response = self.client.post(reverse('api:observatory-list'), data=observatory)
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
+    def test_create_observatory_without_authentication_fails(self):
+        self.client.logout()
+        observatory = {'id': 'LCO', 'name': 'Las Cumbres Observatory'}
+        response = self.client.post(reverse('api:observatory-list'), data=observatory)
+        self.assertContains(response, 'Authentication credentials were not provided', status_code=403)
 
     def test_create_site(self):
         site = {'id': 'tst', 'name': 'Test Site', 'observatory': self.observatory.id,
@@ -30,6 +43,14 @@ class TestCreateApi(APITestCase):
         self.assertEqual(response.json()['name'], site['name'])
         self.assertEqual(response.json()['id'], site['id'])
         self.assertEqual(response.json()['observatory'], self.observatory.id)
+
+    def test_create_site_with_non_admin_user_fails(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        site = {'id': 'tst', 'name': 'Test Site', 'observatory': self.observatory.id,
+                'elevation': 1000.0}
+        response = self.client.post(reverse('api:site-list'), data=site)
+        self.assertContains(response, 'You do not have permission', status_code=403)
 
     def test_create_telescope(self):
         telescope = {'id': '1m0a', 'name': '1 meter - 001', 'site': self.site.id,
@@ -42,6 +63,14 @@ class TestCreateApi(APITestCase):
         self.assertNotIn('status', response.json())
         self.assertNotIn('reason', response.json())
         self.assertNotIn('extra', response.json())
+
+    def test_create_telescope_with_non_admin_user_fails(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        telescope = {'id': '1m0a', 'name': '1 meter - 001', 'site': self.site.id,
+                     'aperture': 1.0, 'latitude':37.7543, 'longitude': -42.23482}
+        response = self.client.post(reverse('api:telescope-list'), data=telescope)
+        self.assertContains(response, 'You do not have permission', status_code=403)
 
     def test_create_telescope_with_status(self):
         telescope = {'id': '1m0a', 'name': '1 meter - 001', 'site': self.site.id,
@@ -67,6 +96,13 @@ class TestCreateApi(APITestCase):
         self.assertNotIn('operation_modes', response.json())
         self.assertNotIn('optical_element_groups', response.json())
 
+    def test_create_instrument_with_non_admin_user_fails(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        instrument = {'id': 'fa01', 'name': 'First Instrument - 001', 'telescope': self.telescope.id}
+        response = self.client.post(reverse('api:instrument-list'), data=instrument)
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
     def test_create_instrument_with_capabilities(self):
         instrument = {'id': 'fa01', 'name': 'First Instrument - 001', 'telescope': self.telescope.id,
                       'status': models.InstrumentCapability.InstrumentStatus.UNAVAILABLE,
@@ -83,9 +119,9 @@ class TestCreateApi(APITestCase):
 class TestTelescopeStatus(APITestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.user = mixer.blend(User)
+        self.user = mixer.blend(User, is_superuser=False)
         self.client.force_login(self.user)
-        self.observatory = mixer.blend(models.Observatory)
+        self.observatory = mixer.blend(models.Observatory, admin=self.user)
         self.site = mixer.blend(models.Site, observatory=self.observatory)
         self.telescope = mixer.blend(models.Telescope, site=self.site)
         self.instrument = mixer.blend(models.Instrument, telescope=self.telescope)
@@ -127,6 +163,17 @@ class TestTelescopeStatus(APITestCase):
         self.assertEqual(response.json()['reason'], status['reason'])
         self.assertEqual(response.json()['extra'], status['extra'])
 
+    def test_create_telescope_status_fails_if_not_admin_user(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        status = {'telescope': self.telescope.id,
+                  'status': models.TelescopeStatus.StatusChoices.UNAVAILABLE,
+                  'reason': 'Engineering Night',
+                  'extra': {'start': '2024-01-11T03:32:22Z', 'end': '2024-01-12T00:00:00Z'}
+                  }
+        response = self.client.post(reverse('api:telescopestatus-list'), data=status, format='json')
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
     def test_fails_to_create_telescope_status_from_telescope_endpoint(self):
         # Set telescope status without telescope id, that is part of the endpoint instead
         status = {'status': 'Not a Status',
@@ -149,6 +196,16 @@ class TestTelescopeStatus(APITestCase):
         self.assertEqual(response.json()['reason'], status['reason'])
         self.assertEqual(response.json()['extra'], status['extra'])
 
+    def test_create_telescope_status_from_telescope_endpoint_fails_if_not_admin_user(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        status = {'status': models.TelescopeStatus.StatusChoices.UNAVAILABLE,
+                  'reason': 'Engineering Night',
+                  'extra': {'start': '2024-01-11T03:32:22Z', 'end': '2024-01-12T00:00:00Z'}
+                  }
+        response = self.client.post(reverse('api:telescope-status', args=(self.telescope.id,)), data=status, format='json')
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
     def test_telescope_status_with_pointing(self):
         status = {'telescope': self.telescope.id,
                   'status': models.TelescopeStatus.StatusChoices.POINTING,
@@ -166,6 +223,7 @@ class TestTelescopeStatus(APITestCase):
         self.assertEqual(response.json()['instrument'], status['instrument'])
 
     def test_getting_all_telescope_statuses_for_telescope(self):
+        self.client.logout()
         # Add a second telescope status
         second_status = mixer.blend(models.TelescopeStatus, telescope=self.telescope,
                                     reason='Second', status=models.TelescopeStatus.StatusChoices.UNAVAILABLE)
@@ -184,9 +242,9 @@ class TestTelescopeStatus(APITestCase):
 class TestInstrumentCapability(APITestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.user = mixer.blend(User)
+        self.user = mixer.blend(User, is_superuser=False)
         self.client.force_login(self.user)
-        self.observatory = mixer.blend(models.Observatory)
+        self.observatory = mixer.blend(models.Observatory, admin=self.user)
         self.site = mixer.blend(models.Site, observatory=self.observatory)
         self.telescope = mixer.blend(models.Telescope, site=self.site)
         self.instrument = mixer.blend(models.Instrument, telescope=self.telescope)
@@ -223,7 +281,16 @@ class TestInstrumentCapability(APITestCase):
         self.assertEqual(response.json()['optical_element_groups'], {})
         self.assertEqual(response.json()['operation_modes'], {})
 
-    def test_fails_to_create_instrument_capability_from_instrument_endpoint(self):
+    def test_create_instrument_capability_fails_if_not_admin_user(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        status = {'instrument': self.instrument.id,
+                  'status': models.InstrumentCapability.InstrumentStatus.UNAVAILABLE,
+                 }
+        response = self.client.post(reverse('api:instrumentcapability-list'), data=status, format='json')
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
+    def test_fails_to_create_instrument_capability_from_instrument_endpoint_bad_status(self):
         # Bad status should fail
         capability = {'status': 'Not a Status',
                   }
@@ -240,7 +307,15 @@ class TestInstrumentCapability(APITestCase):
         self.assertEqual(response.json()['optical_element_groups'], {})
         self.assertEqual(response.json()['operation_modes'], {})
 
+    def test_create_instrument_capability_from_instrument_endpoint_fails_if_not_admin_user(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        capability = {'status': models.InstrumentCapability.InstrumentStatus.SCHEDULABLE}
+        response = self.client.post(reverse('api:instrument-capabilities', args=(self.instrument.id,)), data=capability, format='json')
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
     def test_getting_all_instrument_capabilities_for_instrument(self):
+        self.client.logout()
         # Add a second instrument capability
         second_capablity = mixer.blend(models.InstrumentCapability, instrument=self.instrument,
                                        status=models.InstrumentCapability.InstrumentStatus.SCHEDULABLE

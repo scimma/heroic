@@ -1,6 +1,30 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
+from django.contrib.auth.models import User, AbstractUser
+from rest_framework.authtoken.models import Token
+from django.contrib.auth.models import AbstractUser
+
+
+class UserProxy(User):
+    # This proxy model exists so the admin interface choices for setting "admin" on the Observatory use email
+    # This is because the username is auto generated and makes no sense.
+    class Meta:
+        proxy = True
+
+    def __str__(self):
+        return f'{self.email} - {super().__str__()}'
+
+
+class Profile(models.Model):
+    # This model will store user settings
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    credential_name = models.CharField(max_length=256, blank=True, default='', help_text='Scimma Auth User Scram Credential name')
+    credential_password = models.CharField(max_length=256, blank=True, default='', help_text='Scimma Auth User Scram Credential password')
+
+    @property
+    def api_token(self):
+        return Token.objects.get_or_create(user=self.user)[0]
 
 
 class Observatory(models.Model):
@@ -10,6 +34,7 @@ class Observatory(models.Model):
 
     id = models.CharField(max_length=50, primary_key=True)
     name = models.CharField(max_length=100, help_text=_('Observatory Name'))
+    admin = models.ForeignKey(UserProxy, null=True, blank=True, on_delete=models.SET_NULL)
 
     def __str__(self):
         return self.name
@@ -71,6 +96,10 @@ class Telescope(models.Model):
     def __str__(self):
         return self.name
 
+    @property
+    def observatory(self):
+        return self.site.observatory
+
 
 class Instrument(models.Model):
     id = models.CharField(max_length=50, primary_key=True)
@@ -81,6 +110,9 @@ class Instrument(models.Model):
     def __str__(self):
         return self.name
 
+    @property
+    def observatory(self):
+        return self.telescope.observatory
 
 class TelescopeStatus(models.Model):
 
@@ -127,6 +159,9 @@ class TelescopeStatus(models.Model):
     def __str__(self):
         return f"{self.telescope.name} - {self.status} at {self.date}"
 
+    @property
+    def observatory(self):
+        return self.telescope.observatory
 
 class InstrumentCapability(models.Model):
 
@@ -156,3 +191,7 @@ class InstrumentCapability(models.Model):
 
     def __str__(self):
         return f"{self.instrument.name} - Capability at {self.date}"
+
+    @property
+    def observatory(self):
+        return self.instrument.observatory

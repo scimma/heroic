@@ -15,6 +15,20 @@ Then once a telescope and instrument are set up, periodic updates can be sent fo
 2. POST new instrument capabilities updates to `/api/instruments/<instrument_id>/capabilities/` as needed.
 
 
+### Authentication
+Authentication occurs via SCiMMA admin, which uses CILogin and KeyCloak. In practice this means that a user account in HEROIC must
+first login via the User Interface to "create" their user account in SCiMMA admin and associate it with a HEROIC user account which has an
+API Token. After that, their HEROIC API Token can be used for future authentication with HEROIC, which behind the scenes will verify their
+SCiMMA credentials. Users with the "SCiMMA Developers" claim will be automatically given a superuser acount in HEROIC.
+
+
+### Permissions
+Everyone has permission to GET from any HEROIC endpoint. POSTs are limited to an account set as the `admin` account of an Observatory
+for any data relating to components of that Observatory. This means that initially, a HEROIC admin/superuser account must create a new
+Observatory and assign another user as that Observatory's admin. After that, the observatory admin user can POST all other data into
+HEROIC for that observatory.
+
+
 ## Development
 This project uses poetry for dependency management. To develop with this project run:
 

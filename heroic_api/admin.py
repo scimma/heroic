@@ -97,9 +97,10 @@ class SiteAdmin(admin.ModelAdmin):
 
 
 class ObservatoryAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'sites_count')
+    list_display = ('id', 'name', 'admin', 'sites_count')
     search_fields = ('id', 'name')
     readonly_fields = ('sites',)
+    autocomplete_fields = ('admin',)
 
     def sites_count(self, obj):
         return obj.sites.count()
@@ -111,6 +112,11 @@ class ObservatoryAdmin(admin.ModelAdmin):
         return mark_safe(html)
 
 
+class UserProxyAdmin(admin.ModelAdmin):
+    search_fields = ('email', 'first_name', 'last_name')
+
+
+admin.site.register(models.UserProxy, UserProxyAdmin)
 admin.site.register(models.InstrumentCapability, InstrumentCapabilityAdmin)
 admin.site.register(models.TelescopeStatus, TelescopeStatusAdmin)
 admin.site.register(models.Instrument, InstrumentAdmin)

@@ -20,5 +20,6 @@ from django.urls import path, re_path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('auth/', include('mozilla_django_oidc.urls')),
     re_path(r'^api/', include(('heroic_api.urls', 'api'), namespace='api')),  # Include heroic_api routes
 ]
