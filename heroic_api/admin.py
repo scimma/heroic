@@ -76,7 +76,10 @@ class TelescopeAdmin(admin.ModelAdmin):
     def instruments(self, obj):
         html = ''
         for instrument in obj.instruments.all():
-            html += f'<a href="{reverse('admin:heroic_api_instrument_change', args=(instrument.id,))}">{instrument.id}</a></p>'
+            html += '<a href="{0}">{1}</a></p>'.format(
+                reverse('admin:heroic_api_instrument_change', args=(instrument.id,)),
+                instrument.id
+            )
         return mark_safe(html)
 
 
@@ -92,7 +95,10 @@ class SiteAdmin(admin.ModelAdmin):
     def telescopes(self, obj):
         html = ''
         for telescope in obj.telescopes.all():
-            html += f'<a href="{reverse('admin:heroic_api_telescope_change', args=(telescope.id,))}">{telescope.id}</a></p>'
+            html += '<a href="{0}">{1}</a></p>'.format(
+                reverse('admin:heroic_api_telescope_change', args=(telescope.id,)),
+                telescope.id
+            )
         return mark_safe(html)
 
 
@@ -108,7 +114,10 @@ class ObservatoryAdmin(admin.ModelAdmin):
     def sites(self, obj):
         html = ''
         for site in obj.sites.all():
-            html += f'<a href="{reverse('admin:heroic_api_site_change', args=(site.id,))}">{site.id}</a></p>'
+            html += '<a href="{0}">{1}</a></p>'.format(
+                reverse('admin:heroic_api_site_change', args=(site.id,)),
+                site.id
+            )
         return mark_safe(html)
 
 
