@@ -28,8 +28,6 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install 'poetry'
         poetry install
-      env:
-        SETUPTOOLS_USE_DISTUTILS: stdlib
     - name: Run tests
       run: |
         poetry run coverage run manage.py test
