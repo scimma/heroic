@@ -1,7 +1,7 @@
 from django.urls import re_path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    ObservatoryViewSet, SiteViewSet, TelescopeViewSet,
+    ObservatoryViewSet, SiteViewSet, TelescopeViewSet, ProfileAPIView,
     InstrumentViewSet, TelescopeStatusViewSet, InstrumentCapabilityViewSet
 )
 
@@ -16,4 +16,5 @@ router.register(r'instrument-capabilities', InstrumentCapabilityViewSet)
 
 urlpatterns = [
     re_path(r'^', include(router.urls)),
+    re_path(r'profile', ProfileAPIView.as_view()),
 ]

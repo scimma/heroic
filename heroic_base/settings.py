@@ -38,9 +38,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework',
     'django_filters',
     'django_extensions',
+    'rest_framework',
+    'rest_framework.authtoken',
+    'mozilla_django_oidc',
     'heroic_api',
 ]
 
@@ -50,6 +52,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'heroic_api.middleware.SCiMMAAuthSessionRefresh',  # if scimma auth is expired, force user to logout
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -127,3 +130,60 @@ STATIC_ROOT = os.getenv('STATIC_ROOT', 'static/')
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'heroic_api.auth_backends.HopskotchOIDCAuthenticationBackend',
+]
+
+REST_FRAMEWORK = {
+    'DEFAULT_METADATA_CLASS': 'rest_framework.metadata.SimpleMetadata',
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.SessionAuthentication',
+        'heroic_api.auth_backends.HeroicTokenAuthentication',
+    ),
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
+    "PAGE_SIZE": 100,
+}
+
+HEROIC_FRONT_END_BASE_URL = os.getenv('HEROIC_FRONT_END_BASE_URL', 'http://127.0.0.1:8000/')
+
+# Client ID (OIDC_RP_CLIENT_ID) and SECRET (OIDC_RP_CLIENT_SECRET)
+# are how HEROIC represents itself as the "relying party" (RP) to
+# the SCiMMA Keycloak instance (login.scimma.org) (the OP). They should
+# enter the environment as k8s secrets. Client ID and SECRET values were
+# obtained from Keycloak via SCiMMA/Chris Weaver.
+OIDC_RP_CLIENT_ID = os.getenv('OIDC_RP_CLIENT_ID', '')
+OIDC_RP_CLIENT_SECRET = os.getenv('OIDC_RP_CLIENT_SECRET', '')
+OIDC_RP_SIGN_ALGO = 'RS256'  # Signing Algorithm for Keycloak
+OIDC_STORE_ID_TOKEN = True  # Forces OIDC login to store oidc_id_token in session dict
+
+OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://login.scimma.org/realms/SCiMMA/protocol/openid-connect/auth'
+OIDC_OP_TOKEN_ENDPOINT = 'https://login.scimma.org/realms/SCiMMA/protocol/openid-connect/token'
+OIDC_OP_USER_ENDPOINT = 'https://login.scimma.org/realms/SCiMMA/protocol/openid-connect/userinfo'
+OIDC_OP_JWKS_ENDPOINT = 'https://login.scimma.org/realms/SCiMMA/protocol/openid-connect/certs'
+# this method is invoke upon /logout -> mozilla_django_oidc.ODICLogoutView.post
+OIDC_OP_LOGOUT_URL_METHOD = 'heroic_api.auth_backends.hopskotch_logout'
+OIDC_OP_LOGOUT_ENDPOINT = 'https://login.scimma.org/realms/SCiMMA/protocol/openid-connect/logout'
+
+# Set the OIDC login to be valid for 2 weeks since we disabled the refresh middleware
+OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS = 60 * 60 * 24 * 14
+
+# this tells mozilla-django-oidc that the front end can logout with a GET
+# which allows the front end to use location.href to /auth/logout to logout.
+ALLOW_LOGOUT_GET_METHOD = True
+
+# SCiMMA Auth and Hopskotch specific configuration
+# SCIMMA_AUTH_BASE_URL = 'http://127.0.0.1:8000/hopauth'  # for local development of SCiMMA Auth (scimma_admin)
+# SCIMMA_AUTH_BASE_URL = 'https://my.hop.scimma.org/hopauth'  # for prod deployment of SCiMMA Auth (scimma_admin)
+SCIMMA_AUTH_BASE_URL = os.getenv('SCIMMA_AUTH_BASE_URL', 'https://admin.dev.hop.scimma.org/hopauth')  # for dev
+SCIMMA_AUTH_USERNAME = os.getenv('SCIMMA_AUTH_USERNAME', '')
+SCIMMA_AUTH_PASSWORD = os.getenv('SCIMMA_AUTH_PASSWORD', '')
+
+LOGIN_URL = '/'  # This is the default redirect URL for user authentication tests
+LOGIN_REDIRECT_URL = HEROIC_FRONT_END_BASE_URL  # URL path to redirect to after login
+LOGOUT_REDIRECT_URL = HEROIC_FRONT_END_BASE_URL  # URL path to redirect to after logout
+LOGIN_REDIRECT_URL_FAILURE = HEROIC_FRONT_END_BASE_URL  # TODO: create login failure page
+
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

@@ -43,7 +43,9 @@ dependencies = [
     "django-extensions >=3.0.0,<4.0.0",
     "django-filter >=23,<25",
     "python-dateutil <3",
-    "requests <3"
+    "requests <3",
+    "mozilla-django-oidc (>=4.0.1,<5.0.0)",
+    "hop-client (>=0.11.0,<1.0.0)"
 ]
 
 [tool.poetry]

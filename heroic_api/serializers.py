@@ -1,5 +1,15 @@
 from rest_framework import serializers
-from .models import Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability
+from .models import (Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability,
+                     Profile)
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    email = serializers.CharField(source='user.email', read_only=True)
+    api_token = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = ('api_token', 'email', 'credential_name')
 
 
 class TelescopeStatusSerializer(serializers.ModelSerializer):
