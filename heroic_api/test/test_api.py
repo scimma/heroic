@@ -11,9 +11,9 @@ class TestCreateApi(APITestCase):
         super().setUp()
         self.user = mixer.blend(User, is_superuser=False)
         self.client.force_login(self.user)
-        self.observatory = mixer.blend(models.Observatory, admin=self.user)
-        self.site = mixer.blend(models.Site, observatory=self.observatory)
-        self.telescope = mixer.blend(models.Telescope, site=self.site)
+        self.observatory = mixer.blend(models.Observatory, id='tstObs', admin=self.user)
+        self.site = mixer.blend(models.Site, id=f'{self.observatory.id}.testSite', observatory=self.observatory)
+        self.telescope = mixer.blend(models.Telescope, id=f'{self.site.id}.testTel', site=self.site)
 
     def test_create_observatory_works_for_superuser(self):
         superuser = mixer.blend(User, is_superuser=True, is_staff=True)
@@ -36,13 +36,24 @@ class TestCreateApi(APITestCase):
         self.assertContains(response, 'Authentication credentials were not provided', status_code=403)
 
     def test_create_site(self):
-        site = {'id': 'tst', 'name': 'Test Site', 'observatory': self.observatory.id,
+        site = {'id': f'{self.observatory.id}.tst', 'name': 'Test Site', 'observatory': self.observatory.id,
                 'elevation': 1000.0}
         response = self.client.post(reverse('api:site-list'), data=site)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()['name'], site['name'])
         self.assertEqual(response.json()['id'], site['id'])
         self.assertEqual(response.json()['observatory'], self.observatory.id)
+
+    def test_create_site_fails_with_invalid_id(self):
+        site = {'id': f'notMyObs.tst', 'name': 'Test Site', 'observatory': self.observatory.id,
+                'elevation': 1000.0}
+        response = self.client.post(reverse('api:site-list'), data=site)
+        self.assertContains(response, 'Site id must follow the format', status_code=400)
+
+        site = {'id': f'tst', 'name': 'Test Site', 'observatory': self.observatory.id,
+                'elevation': 1000.0}
+        response = self.client.post(reverse('api:site-list'), data=site)
+        self.assertContains(response, 'Site id must follow the format', status_code=400)
 
     def test_create_site_with_non_admin_user_fails(self):
         basic_user = mixer.blend(User, is_superuser=False)
@@ -53,7 +64,7 @@ class TestCreateApi(APITestCase):
         self.assertContains(response, 'You do not have permission', status_code=403)
 
     def test_create_telescope(self):
-        telescope = {'id': '1m0a', 'name': '1 meter - 001', 'site': self.site.id,
+        telescope = {'id': f'{self.site.id}.1m0a', 'name': '1 meter - 001', 'site': self.site.id,
                      'aperture': 1.0, 'latitude':37.7543, 'longitude': -42.23482}
         response = self.client.post(reverse('api:telescope-list'), data=telescope)
         self.assertEqual(response.status_code, 201)
@@ -73,7 +84,7 @@ class TestCreateApi(APITestCase):
         self.assertContains(response, 'You do not have permission', status_code=403)
 
     def test_create_telescope_with_status(self):
-        telescope = {'id': '1m0a', 'name': '1 meter - 001', 'site': self.site.id,
+        telescope = {'id': f'{self.site.id}.1m0a', 'name': '1 meter - 001', 'site': self.site.id,
                      'aperture': 1.0, 'latitude':37.7543, 'longitude': -42.23482,
                      'status': models.TelescopeStatus.StatusChoices.SCHEDULABLE,
                      'extra': {'operator': 'Mr. Bean'}}
@@ -85,8 +96,19 @@ class TestCreateApi(APITestCase):
         self.assertEqual(response.json()['status'], telescope['status'])
         self.assertEqual(response.json()['extra'], telescope['extra'])
 
+    def test_create_telescope_fails_with_invalid_id(self):
+        telescope = {'id': f'testObs.NotSite.1m0a', 'name': '1 meter - 001', 'site': self.site.id,
+                     'aperture': 1.0, 'latitude':37.7543, 'longitude': -42.23482}
+        response = self.client.post(reverse('api:telescope-list'), data=telescope)
+        self.assertContains(response, 'Telescope id must follow the format', status_code=400)
+
+        telescope = {'id': f'1m0a', 'name': '1 meter - 001', 'site': self.site.id,
+                     'aperture': 1.0, 'latitude':37.7543, 'longitude': -42.23482}
+        response = self.client.post(reverse('api:telescope-list'), data=telescope)
+        self.assertContains(response, 'Telescope id must follow the format', status_code=400)
+
     def test_create_instrument(self):
-        instrument = {'id': 'fa01', 'name': 'First Instrument - 001', 'telescope': self.telescope.id}
+        instrument = {'id': f'{self.telescope.id}.fa01', 'name': 'First Instrument - 001', 'telescope': self.telescope.id}
         response = self.client.post(reverse('api:instrument-list'), data=instrument)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()['name'], instrument['name'])
@@ -104,7 +126,7 @@ class TestCreateApi(APITestCase):
         self.assertContains(response, 'You do not have permission', status_code=403)
 
     def test_create_instrument_with_capabilities(self):
-        instrument = {'id': 'fa01', 'name': 'First Instrument - 001', 'telescope': self.telescope.id,
+        instrument = {'id': f'{self.telescope.id}.fa01', 'name': 'First Instrument - 001', 'telescope': self.telescope.id,
                       'status': models.InstrumentCapability.InstrumentStatus.UNAVAILABLE,
                       'operation_modes': {'readout': {'default': 'full-frame', 'options': [{'id': 'full-frame', 'name': 'Full Frame Readout Mode'}]}}}
         response = self.client.post(reverse('api:instrument-list'), data=instrument, format='json')
@@ -114,6 +136,15 @@ class TestCreateApi(APITestCase):
         self.assertEqual(response.json()['telescope'], self.telescope.id)
         self.assertEqual(response.json()['status'], instrument['status'])
         self.assertEqual(response.json()['operation_modes'], instrument['operation_modes'])
+
+    def test_create_instrument_fails_with_invalid_id(self):
+        instrument = {'id': f'testObs.testSite.NotATel.fa01', 'name': 'First Instrument - 001', 'telescope': self.telescope.id}
+        response = self.client.post(reverse('api:instrument-list'), data=instrument)
+        self.assertContains(response, 'Instrument id must follow the format', status_code=400)
+
+        instrument = {'id': f'fa01', 'name': 'First Instrument - 001', 'telescope': self.telescope.id}
+        response = self.client.post(reverse('api:instrument-list'), data=instrument)
+        self.assertContains(response, 'Instrument id must follow the format', status_code=400)
 
 
 class TestTelescopeStatus(APITestCase):

@@ -5,9 +5,6 @@ from django.contrib.auth.models import User, AbstractUser
 from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import AbstractUser
 
-NAME_LEN = 30
-ID_LEN = 3 + NAME_LEN * 4  # Allow: OBS.SITE.TELE.INST
-
 
 class UserProxy(User):
     # This proxy model exists so the admin interface choices for setting "admin" on the Observatory use email
@@ -35,8 +32,8 @@ class Observatory(models.Model):
     class Meta:
         verbose_name_plural = 'Observatories'
 
-    id = models.CharField(max_length=ID_LEN, primary_key=True)
-    name = models.CharField(max_length=NAME_LEN, help_text=_('Observatory Name'))
+    id = models.CharField(max_length=63, primary_key=True)
+    name = models.CharField(max_length=255, help_text=_('Observatory Name'))
     admin = models.ForeignKey(UserProxy, null=True, blank=True, on_delete=models.SET_NULL)
 
     def __str__(self):
@@ -44,8 +41,8 @@ class Observatory(models.Model):
 
 
 class Site(models.Model):
-    id = models.CharField(max_length=ID_LEN, primary_key=True)
-    name = models.CharField(max_length=NAME_LEN, help_text=_('Site Name'))
+    id = models.CharField(max_length=127, primary_key=True)
+    name = models.CharField(max_length=255, help_text=_('Site Name'))
     timezone = models.CharField(default='UTC', max_length=64, help_text=_('Timezone Name'))
     elevation = models.FloatField(
         validators=[MinValueValidator(-500.0), MaxValueValidator(100000.0)],
@@ -58,8 +55,8 @@ class Site(models.Model):
 
 
 class Telescope(models.Model):
-    id = models.CharField(max_length=ID_LEN, primary_key=True)
-    name = models.CharField(max_length=NAME_LEN, help_text=_('Telescope Name'))
+    id = models.CharField(max_length=191, primary_key=True)
+    name = models.CharField(max_length=255, help_text=_('Telescope Name'))
     aperture = models.FloatField(
         default=0.0, validators=[MinValueValidator(0)],
         help_text=_('The aperture of this telescope in meters')
@@ -105,8 +102,8 @@ class Telescope(models.Model):
 
 
 class Instrument(models.Model):
-    id = models.CharField(max_length=ID_LEN, primary_key=True)
-    name = models.CharField(max_length=NAME_LEN, help_text=_('Instrument name'))
+    id = models.CharField(max_length=255, primary_key=True)
+    name = models.CharField(max_length=255, help_text=_('Instrument name'))
     available = models.BooleanField(default=True, help_text=_('Whether this Instrument is available or not'))
     telescope = models.ForeignKey(Telescope, on_delete=models.CASCADE, related_name="instruments")
 
@@ -143,7 +140,7 @@ class TelescopeStatus(models.Model):
     )
 
     # These fields are just used for a Pointing type status message, to show what instrument pointed where
-    target = models.CharField(max_length=NAME_LEN, blank=True, null=True, help_text=_('Target name for current pointing'))
+    target = models.CharField(max_length=255, blank=True, null=True, help_text=_('Target name for current pointing'))
     ra = models.FloatField(
         blank=True, null=True,
         validators=[MinValueValidator(0.0), MaxValueValidator(360.0)],
@@ -181,7 +178,7 @@ class InstrumentCapability(models.Model):
     date = models.DateTimeField(auto_now_add=True, db_index=True)
     instrument = models.ForeignKey(Instrument, on_delete=models.CASCADE, related_name="capabilities")
     status = models.CharField(
-        max_length=20, choices=InstrumentStatus.choices,
+        max_length=32, choices=InstrumentStatus.choices,
         default=InstrumentStatus.AVAILABLE,
         help_text=_('Instrument availability status')
     )

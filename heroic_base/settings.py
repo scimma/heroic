@@ -147,17 +147,6 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 100,
 }
 
-### local_settings.py
-AUTHENTICATION_BACKENDS = [
-    'django.contrib.auth.backends.ModelBackend',
-]
-### local_settings.py
-REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = (
-    'rest_framework.authentication.SessionAuthentication',
-    'rest_framework.authentication.TokenAuthentication',
-)
-
-
 HEROIC_FRONT_END_BASE_URL = os.getenv('HEROIC_FRONT_END_BASE_URL', 'http://127.0.0.1:8000/')
 
 # Client ID (OIDC_RP_CLIENT_ID) and SECRET (OIDC_RP_CLIENT_SECRET)
@@ -199,3 +188,8 @@ LOGIN_REDIRECT_URL_FAILURE = HEROIC_FRONT_END_BASE_URL  # TODO: create login fai
 
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+try:
+    from local_settings import *
+except ImportError:
+    pass
