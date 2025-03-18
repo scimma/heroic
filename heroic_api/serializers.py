@@ -34,6 +34,14 @@ class InstrumentSerializer(serializers.ModelSerializer):
         model = Instrument
         fields = '__all__'
 
+    def validate(self, data):
+        validated_data = super().validate(data)
+        split_id = validated_data.get('id', '').rsplit('.', 1)
+        if len(split_id) != 2 or split_id[0] != validated_data.get('telescope').id:
+            raise serializers.ValidationError("Instrument id must follow the format 'observatory.site.telescope.instrument'")
+
+        return validated_data
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         # Add in the current instrument capability into the response
@@ -73,6 +81,15 @@ class TelescopeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Telescope
         fields = '__all__'
+
+    def validate(self, data):
+        validated_data = super().validate(data)
+        split_id = validated_data.get('id', '').rsplit('.', 1)
+        if len(split_id) != 2 or split_id[0] != validated_data.get('site').id:
+            raise serializers.ValidationError("Telescope id must follow the format 'observatory.site.telescope'")
+
+        return validated_data
+
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -116,6 +133,14 @@ class SiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Site
         fields = '__all__'
+
+    def validate(self, data):
+        validated_data = super().validate(data)
+        split_id = validated_data.get('id', '').rsplit('.', 1)
+        if len(split_id) != 2 or split_id[0] != validated_data.get('observatory').id:
+            raise serializers.ValidationError("Site id must follow the format 'observatory.site'")
+
+        return validated_data
 
 
 class ObservatorySerializer(serializers.ModelSerializer):
