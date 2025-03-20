@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from heroic_api.models import Telescope, TargetTypes
 
 from rise_set.astrometry import (
-    make_ra_dec_target, make_satellite_target, make_hour_angle_target, make_minor_planet_target,
+    make_ra_dec_target, make_minor_planet_target,
     make_comet_target, make_major_planet_target, calculate_airmass_at_times
 )
 from rise_set.angle import Angle
@@ -102,36 +102,16 @@ def get_proper_motion(target_dict: dict):
 
 def get_rise_set_target(target_dict: dict):
     # The data in the dict should contain target_type which has been filled in with inferred type of the target
-    if target_dict['target_type'] in [TargetTypes.ICRS.name, TargetTypes.HOUR_ANGLE.name]:
+    if target_dict['target_type'] == TargetTypes.ICRS.name:
         pm = get_proper_motion(target_dict)
-        if target_dict['target_type'] == TargetTypes.ICRS.name:
-            return make_ra_dec_target(
-                ra=Angle(degrees=target_dict['ra']),
-                dec=Angle(degrees=target_dict['dec']),
-                ra_proper_motion=pm['pmra'],
-                dec_proper_motion=pm['pmdec'],
-                parallax=target_dict.get('parallax', 0.0),
-                rad_vel=0.0,
-                epoch=target_dict['epoch']
-            )
-        elif target_dict['target_type'] == TargetTypes.HOUR_ANGLE.name:
-            return make_hour_angle_target(
-                hour_angle=Angle(degrees=target_dict['hour_angle']),
-                dec=Angle(degrees=target_dict['dec']),
-                ra_proper_motion=pm['pmra'],
-                dec_proper_motion=pm['pmdec'],
-                parallax=target_dict.get('parallax', 0.0),
-                epoch=target_dict['epoch']
-            )
-    elif target_dict['target_type'] == TargetTypes.SATELLITE.name:
-        return make_satellite_target(
-            alt=target_dict['altitude'],
-            az=target_dict['azimuth'],
-            diff_alt_rate=target_dict['diff_altitude_rate'],
-            diff_az_rate=target_dict['diff_azimuth_rate'],
-            diff_alt_accel=target_dict['diff_altitude_acceleration'],
-            diff_az_accel=target_dict['diff_azimuth_acceleration'],
-            diff_epoch_rate=target_dict['diff_epoch']
+        return make_ra_dec_target(
+            ra=Angle(degrees=target_dict['ra']),
+            dec=Angle(degrees=target_dict['dec']),
+            ra_proper_motion=pm['pmra'],
+            dec_proper_motion=pm['pmdec'],
+            parallax=target_dict.get('parallax', 0.0),
+            rad_vel=0.0,
+            epoch=target_dict['epoch']
         )
     elif target_dict['target_type'] == TargetTypes.MPC_MINOR_PLANET.name:
         return make_minor_planet_target(

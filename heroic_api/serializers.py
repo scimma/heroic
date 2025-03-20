@@ -214,37 +214,6 @@ class TargetVisibilityQuerySerializer(serializers.Serializer):
     )
     epoch = serializers.FloatField(max_value=2100.0, default=2000.0, required=False, help_text=_('Epoch in MJD'))
 
-    ## hour_angle/dec targets
-    hour_angle = serializers.FloatField(required=False, help_text=_('Hour angle of the target'))
-
-    ## altitude/azimuth (satellite) targets
-    altitude = serializers.FloatField(
-        min_value=0.0, max_value=90.0, required=False, help_text=_('Altitude of the target')
-    )
-    azimuth = serializers.FloatField(
-        min_value=0.0, max_value=360.0, required=False, help_text=_('Azimuth of the target')
-    )
-    diff_altitude_rate = serializers.FloatField(
-        required=False,
-        help_text=_('Differential altitude rate in arcsec/s')
-    )
-    diff_azimuth_rate = serializers.FloatField(
-        required=False,
-        help_text=_('Differential azimuth rate in arcsec/s')
-    )
-    diff_epoch = serializers.FloatField(
-        required=False,
-        help_text=_('Reference time for non-sidereal motion in MJD')
-    )
-    diff_altitude_acceleration = serializers.FloatField(
-        required=False,
-        help_text=_('Differential altitude acceleration in arcsec/s^2')
-    )
-    diff_azimuth_acceleration = serializers.FloatField(
-        required=False,
-        help_text=_('Differential azimuth acceleration in arcsec/s^2')
-    )
-
     ## Non-sidereal targets
     epoch_of_elements = serializers.FloatField(
         min_value=10000.0, max_value=100000.0, required=False,
@@ -296,15 +265,6 @@ class TargetVisibilityQuerySerializer(serializers.Serializer):
         # Make sure that a valid target was submitted
         if validated_data.get('ra') and validated_data.get('dec'):
             validated_data['target_type'] = TargetTypes.ICRS.name
-        elif validated_data.get('hour_angle') and validated_data.get('dec'):
-            validated_data['target_type'] = TargetTypes.HOUR_ANGLE.name
-        elif validated_data.get('altitude') and validated_data.get('azimuth'):
-            validated_data['target_type'] = TargetTypes.SATELLITE.name
-            missing_fields = [field for field in self.SATELLITE_FIELDS if field not in validated_data]
-            if missing_fields:
-                raise serializers.ValidationError(
-                    {field: _('This field is required for altitude/azimuth targets') for field in missing_fields}
-                )
         else:
             # Check how many if any fields are missing from the orbital element types to see what error to return
             missing_minor_planet_fields = [field for field in self.MINOR_PLANET_FIELDS if field not in validated_data]

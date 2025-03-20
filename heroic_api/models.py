@@ -199,8 +199,6 @@ class InstrumentCapability(models.Model):
 
 class TargetTypes(models.TextChoices):
     ICRS = 'ICRS', _('ICRS')
-    HOUR_ANGLE = 'HOUR_ANGLE', _('Hour Angle')
-    SATELLITE = 'SATELLITE', _('Satellite')
     MPC_MINOR_PLANET = 'MPC_MINOR_PLANET', _('MPC Minor Planet')
     MPC_COMET = 'MPC_COMET', _('MPC Comet')
     JPL_MAJOR_PLANET = 'JPL_MAJOR_PLANET', _('JPL Major Planet')
