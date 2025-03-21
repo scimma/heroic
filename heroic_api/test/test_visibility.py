@@ -91,6 +91,16 @@ class TestVisibilityIntervals(BaseVisibilityTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(expected_intervals, intervals)
 
+    def test_visibility_intervals_basic_icrs_succeeds_with_post(self):
+        expected_intervals = {
+            self.telescope.id: [['2025-03-01T17:29:09.080298Z', '2025-03-01T19:00:37.291560Z']],
+            self.telescope2.id: [['2025-03-01T08:11:29.401273Z', '2025-03-01T09:41:16.314638Z']]
+        }
+        response = self.client.post(reverse('api:visibility-intervals'), data=self.m22_basic_target_query)
+        intervals = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(expected_intervals, intervals)
+
     def test_visibility_intervals_full_icrs_succeeds(self):
         expected_intervals = {
             self.telescope.id: [['2025-03-01T17:29:09.114194Z', '2025-03-01T19:00:37.291560Z']],
@@ -204,6 +214,23 @@ class TestVisibilityAirmass(BaseVisibilityTestCase):
             }
         }
         response = self.client.get(reverse('api:visibility-airmass'), data=query)
+        airmasses = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(expected_airmasses, airmasses)
+
+    def test_visibility_airmasses_basic_icrs_succeeds_with_post(self):
+        query = self.m22_basic_target_query.copy()
+        # constrain query so our expected values are shorter
+        query['telescopes'] = [self.telescope.id]
+        query['end'] = datetime(2025, 3, 1, 18)
+        expected_airmasses = {
+            self.telescope.id: {
+                'times': ['2025-03-01T17:29:09.080298+00:00', '2025-03-01T17:39:09.080298+00:00',
+                          '2025-03-01T17:49:09.080298+00:00', '2025-03-01T17:59:09.080298+00:00'],
+                'airmasses': [1.9987162221252022, 1.8809851094809273, 1.778227573468417, 1.6879817282310983]
+            }
+        }
+        response = self.client.post(reverse('api:visibility-airmass'), data=query)
         airmasses = response.json()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(expected_airmasses, airmasses)

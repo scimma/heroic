@@ -22,9 +22,14 @@ class ProfileAPIView(RetrieveUpdateAPIView):
         return qs.first().profile
 
 
+
+
 class TargetVisibilityAPIView(APIView):
-    def get(self, request):
-        serializer = TargetVisibilityQuerySerializer(data=request.query_params)
+    """ A API view to get visiblity intervals for targets on telescopes
+        Supports being called through POST with a data dict or GET with query params
+    """
+    def get_visibility(self, data):
+        serializer = TargetVisibilityQuerySerializer(data=data)
         if serializer.is_valid():
             data = serializer.validated_data
             visibility_intervals = get_rise_set_intervals_by_telescope_for_target(data)
@@ -32,13 +37,28 @@ class TargetVisibilityAPIView(APIView):
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    def get(self, request):
+        return self.get_visibility(request.query_params)
+
+    def post(self, request):
+        return self.get_visibility(request.data)
+
 
 class TargetAirmassAPIView(APIView):
-    def get(self, request):
-        serializer = TargetVisibilityQuerySerializer(data=request.query_params)
+    """ A API view to get airmasses for targets on telescopes at times
+        Supports being called through POST with a data dict or GET with query params
+    """
+    def get_airmass(self, data):
+        serializer = TargetVisibilityQuerySerializer(data=data)
         if serializer.is_valid():
             data = serializer.validated_data
             airmass_data = get_airmass_by_telescope_for_target(data)
             return Response(airmass_data, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        return self.get_airmass(request.query_params)
+
+    def post(self, request):
+        return self.get_airmass(request.data)
