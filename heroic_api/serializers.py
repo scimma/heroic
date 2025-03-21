@@ -295,7 +295,7 @@ class TargetVisibilityQuerySerializer(serializers.Serializer):
                     validated_data['target_type'] = TargetTypes.JPL_MAJOR_PLANET.name
                 if missing_fields:
                     raise serializers.ValidationError(
-                        {field: _(f'This field is required for {validated_data['target_type']} targets') for field in missing_fields}
+                        {field: _(f'This field is required for {validated_data["target_type"]} targets') for field in missing_fields}
                     )
                 else:
                     raise serializers.ValidationError(
