@@ -164,10 +164,6 @@ class TargetVisibilityQuerySerializer(serializers.Serializer):
         'epoch_of_elements', 'orbital_inclination', 'longitude_of_ascending_node', 'argument_of_perihelion',
         'mean_distance', 'eccentricity', 'mean_anomaly', 'daily_motion'
     ]
-    SATELLITE_FIELDS = [
-        'diff_altitude_rate', 'diff_azimuth_rate', 'diff_altitude_acceleration', 'diff_azimuth_acceleration',
-        'diff_epoch', 'altitude', 'azimuth'
-    ]
     # Base fields
     telescopes = serializers.SlugRelatedField(
         slug_field='id', queryset=Telescope.objects.all(), many=True, allow_null=True
@@ -282,6 +278,8 @@ class TargetVisibilityQuerySerializer(serializers.Serializer):
                 missing_major = len(missing_major_planet_fields)
                 missing_fields = []
                 # We are missing some fields of an orbital element target or missing a target completely
+                # Sort by which orbital element scheme is missing the least fields
+                # But prioritize minor -> comet -> major if missing fields are equal
                 if (missing_minor <= missing_comet and
                     missing_minor <= missing_major and
                     missing_minor < len(self.MINOR_PLANET_FIELDS)):
