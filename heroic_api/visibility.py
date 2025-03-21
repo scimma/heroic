@@ -45,7 +45,9 @@ def get_rise_set_intervals_by_telescope_for_target(data: dict) -> dict:
                 ),
                 moon_phase=data.get('max_lunar_phase', 1.0)
             )
-            intervals_by_telescope[telescope.id] = target_intervals
+            # Use the intervals library to coaslesce adjacent intervals for non-sidereal targets since they are sampled
+            # Will probably use more things in Intervals later to intersect/union intervals together
+            intervals_by_telescope[telescope.id] = Intervals(target_intervals).toTupleList()
         except MovingViolation:
             pass
                 
