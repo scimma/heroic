@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'mozilla_django_oidc',
     'heroic_api',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -142,8 +143,17 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
         'heroic_api.auth_backends.HeroicTokenAuthentication',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
     "PAGE_SIZE": 100,
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'HEROIC API',
+    'DESCRIPTION': 'API to store telescope status and instrument capabilities and query target visibility',
+    'VERSION': '0.1.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    # OTHER SETTINGS
 }
 
 HEROIC_FRONT_END_BASE_URL = os.getenv('HEROIC_FRONT_END_BASE_URL', 'http://127.0.0.1:8000/')
