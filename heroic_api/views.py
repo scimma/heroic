@@ -1,17 +1,13 @@
-from rest_framework import viewsets
+from rest_framework.views import APIView
 from rest_framework.generics import RetrieveUpdateAPIView
-from rest_framework.decorators import action
-from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from rest_framework import status
+
 from django.contrib.auth.models import User
 
-from heroic_api.models import Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability
-from heroic_api.serializers import (
-    ObservatorySerializer, SiteSerializer, TelescopeSerializer, ProfileSerializer,
-    InstrumentSerializer, TelescopeStatusSerializer, InstrumentCapabilitySerializer
-)
-from heroic_api.permissions import IsObservatoryAdminOrReadOnly, IsAdminOrReadOnly
+from heroic_api.serializers import ProfileSerializer, TargetVisibilityQuerySerializer
+from heroic_api.visibility import get_rise_set_intervals_by_telescope_for_target, get_airmass_by_telescope_for_target
 
 
 class ProfileAPIView(RetrieveUpdateAPIView):
@@ -26,67 +22,43 @@ class ProfileAPIView(RetrieveUpdateAPIView):
         return qs.first().profile
 
 
-class ObservatoryViewSet(viewsets.ModelViewSet):
-    queryset = Observatory.objects.all()
-    serializer_class = ObservatorySerializer
-    permission_classes = [IsAdminOrReadOnly]
 
 
-class SiteViewSet(viewsets.ModelViewSet):
-    queryset = Site.objects.all()
-    serializer_class = SiteSerializer
-    permission_classes = [IsObservatoryAdminOrReadOnly]
+class TargetVisibilityAPIView(APIView):
+    """ A API view to get visiblity intervals for targets on telescopes
+        Supports being called through POST with a data dict or GET with query params
+    """
+    def get_visibility(self, data):
+        serializer = TargetVisibilityQuerySerializer(data=data)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            visibility_intervals = get_rise_set_intervals_by_telescope_for_target(data)
+            return Response(visibility_intervals, status=status.HTTP_200_OK)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        return self.get_visibility(request.query_params)
+
+    def post(self, request):
+        return self.get_visibility(request.data)
 
 
-class TelescopeViewSet(viewsets.ModelViewSet):
-    queryset = Telescope.objects.all()
-    serializer_class = TelescopeSerializer
-    permission_classes = [IsObservatoryAdminOrReadOnly]
+class TargetAirmassAPIView(APIView):
+    """ A API view to get airmasses for targets on telescopes at times
+        Supports being called through POST with a data dict or GET with query params
+    """
+    def get_airmass(self, data):
+        serializer = TargetVisibilityQuerySerializer(data=data)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            airmass_data = get_airmass_by_telescope_for_target(data)
+            return Response(airmass_data, status=status.HTTP_200_OK)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, methods=['get', 'post'])
-    def status(self, request, pk=None):
-        if request.method == 'GET':
-            serializer = TelescopeStatusSerializer(self.get_object().statuses.all(), many=True)
-            return Response(data=serializer.data, status=status.HTTP_200_OK)
-        elif request.method == 'POST':
-            data = request.data
-            data['telescope'] = pk
-            serializer = TelescopeStatusSerializer(data=data, many=isinstance(data, list))
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            else:
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def get(self, request):
+        return self.get_airmass(request.query_params)
 
-
-class InstrumentViewSet(viewsets.ModelViewSet):
-    queryset = Instrument.objects.all()
-    serializer_class = InstrumentSerializer
-    permission_classes = [IsObservatoryAdminOrReadOnly]
-
-    @action(detail=True, methods=['get', 'post'])
-    def capabilities(self, request, pk=None):
-        if request.method == 'GET':
-            serializer = InstrumentCapabilitySerializer(self.get_object().capabilities.all(), many=True)
-            return Response(data=serializer.data, status=status.HTTP_200_OK)
-        elif request.method == 'POST':
-            data = request.data
-            data['instrument'] = pk
-            serializer = InstrumentCapabilitySerializer(data=data, many=isinstance(data, list))
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            else:
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class TelescopeStatusViewSet(viewsets.ModelViewSet):
-    queryset = TelescopeStatus.objects.all()
-    serializer_class = TelescopeStatusSerializer
-    permission_classes = [IsObservatoryAdminOrReadOnly]
-
-
-class InstrumentCapabilityViewSet(viewsets.ModelViewSet):
-    queryset = InstrumentCapability.objects.all()
-    serializer_class = InstrumentCapabilitySerializer
-    permission_classes = [IsObservatoryAdminOrReadOnly]
+    def post(self, request):
+        return self.get_airmass(request.data)

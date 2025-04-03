@@ -1,6 +1,7 @@
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from .models import (Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability,
-                     Profile)
+                     Profile, TargetTypes)
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -38,7 +39,7 @@ class InstrumentSerializer(serializers.ModelSerializer):
         validated_data = super().validate(data)
         split_id = validated_data.get('id', '').rsplit('.', 1)
         if len(split_id) != 2 or split_id[0] != validated_data.get('telescope').id:
-            raise serializers.ValidationError("Instrument id must follow the format 'observatory.site.telescope.instrument'")
+            raise serializers.ValidationError(_("Instrument id must follow the format 'observatory.site.telescope.instrument'"))
 
         return validated_data
 
@@ -86,7 +87,7 @@ class TelescopeSerializer(serializers.ModelSerializer):
         validated_data = super().validate(data)
         split_id = validated_data.get('id', '').rsplit('.', 1)
         if len(split_id) != 2 or split_id[0] != validated_data.get('site').id:
-            raise serializers.ValidationError("Telescope id must follow the format 'observatory.site.telescope'")
+            raise serializers.ValidationError(_("Telescope id must follow the format 'observatory.site.telescope'"))
 
         return validated_data
 
@@ -138,7 +139,7 @@ class SiteSerializer(serializers.ModelSerializer):
         validated_data = super().validate(data)
         split_id = validated_data.get('id', '').rsplit('.', 1)
         if len(split_id) != 2 or split_id[0] != validated_data.get('observatory').id:
-            raise serializers.ValidationError("Site id must follow the format 'observatory.site'")
+            raise serializers.ValidationError(_("Site id must follow the format 'observatory.site'"))
 
         return validated_data
 
@@ -148,3 +149,156 @@ class ObservatorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Observatory
         fields = '__all__'
+
+
+class TargetVisibilityQuerySerializer(serializers.Serializer):
+    MINOR_PLANET_FIELDS = [
+        'epoch_of_elements', 'orbital_inclination', 'longitude_of_ascending_node', 'argument_of_perihelion',
+        'mean_distance', 'eccentricity', 'mean_anomaly'
+    ]
+    COMET_FIELDS = [
+        'epoch_of_elements', 'orbital_inclination', 'longitude_of_ascending_node', 'argument_of_perihelion',
+        'perihelion_distance', 'eccentricity', 'epoch_of_perihelion'
+    ]
+    MAJOR_PLANET_FIELDS = [
+        'epoch_of_elements', 'orbital_inclination', 'longitude_of_ascending_node', 'argument_of_perihelion',
+        'mean_distance', 'eccentricity', 'mean_anomaly', 'daily_motion'
+    ]
+    # Base fields
+    telescopes = serializers.SlugRelatedField(
+        slug_field='id', queryset=Telescope.objects.all(), many=True, allow_null=True
+    )
+    start = serializers.DateTimeField(required=True)
+    end = serializers.DateTimeField(required=True)
+    # Constraints
+    max_airmass = serializers.FloatField(
+        min_value=1.0, max_value=25.0, default=2.0, required=False, help_text=_('Maximum acceptable airmass')
+    )
+    max_lunar_phase = serializers.FloatField(
+        min_value=0.0, max_value=1.0, default=1.0, required=False,
+        help_text=_('Maximum acceptable lunar phase fraction from 0 (new moon) to 1 (full moon)')
+    )
+    min_lunar_distance = serializers.FloatField(
+        min_value=0.0, max_value=180.0, default=0.0, required=False,
+        help_text=_('Minimum acceptable angular separation between the target and moon in decimal degrees')
+    )
+
+    # Target params
+    target_type = serializers.CharField(
+        read_only=True, allow_blank=True, help_text=_('Type of target set by serializer')
+    )
+    ## ra/dec ICRS targets
+    ra = serializers.FloatField(
+        min_value=0.0, max_value=360.0, required=False, help_text=_('Right Ascension in decimal degrees')
+    )
+    dec = serializers.FloatField(
+        min_value=-90.0, max_value=90.0, required=False, help_text=_('Declination in decimal degrees')
+    )
+    proper_motion_ra = serializers.FloatField(
+        min_value=-20000.0, max_value=20000.0, required=False,
+        label=_('Right Ascience Proper Motion mas/yr'),
+        help_text=_('Right Ascension Proper Motion of the target in mas/yr')
+    )
+    proper_motion_dec = serializers.FloatField(
+        min_value=-20000.0, max_value=20000.0, required=False,
+        label=_('Declination Proper Motion mas/yr'),
+        help_text=_('Declination Proper Motion of the target in mas/yr')
+    )
+    parallax = serializers.FloatField(
+        min_value=-2000.0, max_value=2000.0, required=False,
+        help_text=_('Parallax of the target in mas, up to 2000.0')
+    )
+    epoch = serializers.FloatField(max_value=2100.0, default=2000.0, required=False, help_text=_('Epoch in MJD'))
+
+    ## Non-sidereal targets
+    epoch_of_elements = serializers.FloatField(
+        min_value=10000.0, max_value=100000.0, required=False,
+        help_text=_('The epoch of orbital elements (MJD)')
+    )
+    epoch_of_perihelion = serializers.FloatField(
+        min_value=361.0, max_value=240000.0, required=False,
+        help_text=_('The epoch of perihelion (MJD)')
+    )
+    orbital_inclination = serializers.FloatField(
+        min_value=0.0, max_value=180.0, required=False,
+        help_text=_('Orbital Inclination angle in decimal degrees')
+    )
+    longitude_of_ascending_node = serializers.FloatField(
+        min_value=0.0, max_value=360.0, required=False,
+        help_text=_('Longitude of Ascending Node angle in decimal degrees')
+    )
+    longitude_of_perihelion = serializers.FloatField(
+        min_value=0.0, max_value=360.0, required=False,
+        help_text=_('Longitude of Perihelion angle in degrees')
+    )
+    argument_of_perihelion = serializers.FloatField(
+        min_value=0.0, max_value=360.0, required=False,
+        help_text=_('Argument of Perihelion angle in degrees')
+    )
+    mean_distance = serializers.FloatField(
+        required=False, help_text=_('Mean distance in AU')
+    )
+    perihelion_distance = serializers.FloatField(
+        required=False, help_text=_('Perihelion distance in AU')
+    )
+    eccentricity = serializers.FloatField(
+        min_value=0.0, required=False,
+        help_text=_('Eccentricity of the orbit')
+    )
+    mean_anomaly = serializers.FloatField(
+        min_value=0.0, max_value=360.0, required=False, help_text=_('Mean Anomaly angle in degrees')
+    )
+    daily_motion = serializers.FloatField(
+        required=False, help_text=_('Daily Motion angle in degrees')
+    )
+
+    def validate(self, data):
+        validated_data = super().validate(data)
+        # If no specific telescopes were choosen, assume all will be used
+        if not validated_data.get('telescopes'):
+            validated_data['telescopes'] = list(Telescope.objects.all())
+
+        # Make sure that a valid target was submitted
+        if validated_data.get('ra') and validated_data.get('dec'):
+            validated_data['target_type'] = TargetTypes.ICRS.name
+        else:
+            # Check how many if any fields are missing from the orbital element types to see what error to return
+            missing_minor_planet_fields = [field for field in self.MINOR_PLANET_FIELDS if field not in validated_data]
+            missing_comet_fields = [field for field in self.COMET_FIELDS if field not in validated_data]
+            missing_major_planet_fields = [field for field in self.MAJOR_PLANET_FIELDS if field not in validated_data]
+            if len(missing_major_planet_fields) == 0:
+                validated_data['target_type'] = TargetTypes.JPL_MAJOR_PLANET.name
+            elif len(missing_minor_planet_fields) == 0:
+                validated_data['target_type'] = TargetTypes.MPC_MINOR_PLANET.name
+            elif len(missing_comet_fields) == 0:
+                validated_data['target_type'] = TargetTypes.MPC_COMET.name
+            else:
+                missing_minor = len(missing_minor_planet_fields)
+                missing_comet = len(missing_comet_fields)
+                missing_major = len(missing_major_planet_fields)
+                missing_fields = []
+                # We are missing some fields of an orbital element target or missing a target completely
+                # Sort by which orbital element scheme is missing the least fields
+                # But prioritize minor -> comet -> major if missing fields are equal
+                if (missing_minor <= missing_comet and
+                    missing_minor <= missing_major and
+                    missing_minor < len(self.MINOR_PLANET_FIELDS)):
+                    missing_fields = missing_minor_planet_fields
+                    validated_data['target_type'] = TargetTypes.MPC_MINOR_PLANET.name
+                elif (missing_comet <= missing_minor and
+                      missing_comet <= missing_major and
+                      missing_comet < len(self.COMET_FIELDS)):
+                    missing_fields = missing_comet_fields
+                    validated_data['target_type'] = TargetTypes.MPC_COMET.name
+                elif (missing_major < len(self.MAJOR_PLANET_FIELDS)):
+                    missing_fields = missing_major_planet_fields
+                    validated_data['target_type'] = TargetTypes.JPL_MAJOR_PLANET.name
+                if missing_fields:
+                    raise serializers.ValidationError(
+                        {field: _(f'This field is required for {validated_data["target_type"]} targets') for field in missing_fields}
+                    )
+                else:
+                    raise serializers.ValidationError(
+                        _('Must submit a valid target using either ra/dec, hour_angle/dec, altitude/azimuth, or orbital elements')
+                    )
+        return validated_data
