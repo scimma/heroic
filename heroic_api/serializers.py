@@ -302,3 +302,17 @@ class TargetVisibilityQuerySerializer(serializers.Serializer):
                         _('Must submit a valid target using either ra/dec, hour_angle/dec, altitude/azimuth, or orbital elements')
                     )
         return validated_data
+
+
+class TargetVisibilityIntervalResponseSerializer(serializers.Serializer):
+    telescope_id = serializers.ListField(child=serializers.ListField(
+        child=serializers.DateTimeField(), min_length=2, max_length=2), allow_empty=True)
+
+
+class TargetVisibilityAirmassSubSerializer(serializers.Serializer):
+    times = serializers.ListField(child=serializers.DateTimeField())
+    airmasses = serializers.ListField(child=serializers.FloatField())
+
+
+class TargetVisibilityAirmassResponseSerializer(serializers.Serializer):
+    telescope_id = TargetVisibilityAirmassSubSerializer()
