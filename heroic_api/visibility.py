@@ -19,8 +19,7 @@ HOURS_PER_DEGREES = 15.0
 def get_rise_set_intervals_by_telescope_for_target(data: dict) -> dict:
     """Get rise_set intervals by telescope for a target visibility request
 
-    Computes the intervals only if they do not already exist in cache.
-
+    Note: Non-sidereal intervals are calculated on 15 minute samples
     Parameters:
         data: The validated data from the TargetVisibilityQuerySerializer
     Returns:
@@ -161,6 +160,14 @@ def date_range_for_interval(start: datetime, end: datetime, delta_time=timedelta
 
 
 def get_airmass_by_telescope_for_target(data: dict) -> dict:
+    """Get airmass values by telescope for a target visibility request
+
+    Note: Airmasses are calculated on 10 minute samples
+    Parameters:
+        data: The validated data from the TargetVisibilityQuerySerializer
+    Returns:
+        airmass_data: dictionary of telescope id to dictionary of lists of times and airmasses for plotting
+    """
     airmass_data = {}
     visibility_intervals = get_rise_set_intervals_by_telescope_for_target(data)
     rise_set_target = get_rise_set_target(data)
@@ -170,7 +177,7 @@ def get_airmass_by_telescope_for_target(data: dict) -> dict:
             # Expand the visibility intervals into a list of datetimes sampled through the intervals
             for interval in visibility_intervals[telescope.id]:
                 night_times.extend(
-                    [time for time in date_range_for_interval(interval[0], interval[1])]
+                    [time for time in date_range_for_interval(interval[0].replace(tzinfo=None), interval[1].replace(tzinfo=None))]
                 )
             if len(night_times) > 0:
                 airmass_data[telescope.id] = {

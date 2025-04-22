@@ -48,7 +48,8 @@ dependencies = [
     "mozilla-django-oidc (>=4.0.1,<5.0.0)",
     "hop-client (>=0.11.0,<1.0.0)",
     "ocs-rise-set (>=0.6.4,<0.7.0)",
-    "time-intervals (>=1.0.0,<2.0.0)"
+    "time-intervals (>=1.0.0,<2.0.0)",
+    "django-cors-headers (>=4.7.0,<5.0.0)"
 ]
 
 [tool.poetry]
