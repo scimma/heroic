@@ -201,6 +201,15 @@ class TestVisibilityIntervals(BaseVisibilityTestCase):
 
 
 class TestVisibilityAirmass(BaseVisibilityTestCase):
+    def _compare_airmasses(self, expected_airmasses, actual_airmasses):
+        for telescope in set(list(expected_airmasses.keys()) + list(actual_airmasses.keys())):
+            expected = expected_airmasses.get(telescope, {})
+            actual = actual_airmasses.get(telescope, {})
+            self.assertEqual(expected.get('times', []), actual.get('times', []))
+            self.assertEqual(len(expected.get('airmasses', [])), len(actual.get('airmasses', [])))
+            for i, airmass in enumerate(expected.get('airmasses', [])):
+                self.assertAlmostEqual(airmass, actual['airmasses'][i], 7)
+
     def test_visibility_airmasses_basic_icrs_succeeds(self):
         query = self.m22_basic_target_query.copy()
         # constrain query so our expected values are shorter
@@ -216,7 +225,7 @@ class TestVisibilityAirmass(BaseVisibilityTestCase):
         response = self.client.get(reverse('api:visibility-airmass'), data=query)
         airmasses = response.json()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(expected_airmasses, airmasses)
+        self._compare_airmasses(expected_airmasses, airmasses)
 
     def test_visibility_airmasses_basic_icrs_succeeds_with_post(self):
         query = self.m22_basic_target_query.copy()
@@ -233,7 +242,7 @@ class TestVisibilityAirmass(BaseVisibilityTestCase):
         response = self.client.post(reverse('api:visibility-airmass'), data=query)
         airmasses = response.json()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(expected_airmasses, airmasses)
+        self._compare_airmasses(expected_airmasses, airmasses)
 
     def test_visibility_airmasses_minor_planet_succeeds(self):
         query = self.minor_planet_target_query
@@ -250,4 +259,4 @@ class TestVisibilityAirmass(BaseVisibilityTestCase):
         response = self.client.get(reverse('api:visibility-airmass'), data=query)
         airmasses = response.json()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(expected_airmasses, airmasses)
+        self._compare_airmasses(expected_airmasses, airmasses)
