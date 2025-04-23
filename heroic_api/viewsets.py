@@ -18,12 +18,14 @@ class ObservatoryViewSet(viewsets.ModelViewSet):
 
 
 class SiteViewSet(viewsets.ModelViewSet):
+    lookup_value_regex = '[^/]+'
     queryset = Site.objects.all()
     serializer_class = SiteSerializer
     permission_classes = [IsObservatoryAdminOrReadOnly]
 
 
 class TelescopeViewSet(viewsets.ModelViewSet):
+    lookup_value_regex = '[^/]+'
     queryset = Telescope.objects.all()
     serializer_class = TelescopeSerializer
     permission_classes = [IsObservatoryAdminOrReadOnly]
@@ -45,6 +47,7 @@ class TelescopeViewSet(viewsets.ModelViewSet):
 
 
 class InstrumentViewSet(viewsets.ModelViewSet):
+    lookup_value_regex = '[^/]+'
     queryset = Instrument.objects.all()
     serializer_class = InstrumentSerializer
     permission_classes = [IsObservatoryAdminOrReadOnly]

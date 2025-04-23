@@ -166,7 +166,7 @@ class TargetVisibilityQuerySerializer(serializers.Serializer):
     ]
     # Base fields
     telescopes = serializers.SlugRelatedField(
-        slug_field='id', queryset=Telescope.objects.all(), many=True, allow_null=True
+        slug_field='id', queryset=Telescope.objects.all(), many=True, required=False, allow_null=True
     )
     start = serializers.DateTimeField(required=True)
     end = serializers.DateTimeField(required=True)
@@ -254,12 +254,27 @@ class TargetVisibilityQuerySerializer(serializers.Serializer):
 
     def validate(self, data):
         validated_data = super().validate(data)
+
+        # Validate start is < end time
+        if validated_data['start'] >= validated_data['end']:
+            raise serializers.ValidationError(
+                {'end': _('The end datetime must be greater than the start datetime')}
+            )
+
         # If no specific telescopes were choosen, assume all will be used
         if not validated_data.get('telescopes'):
             validated_data['telescopes'] = list(Telescope.objects.all())
 
         # Make sure that a valid target was submitted
-        if validated_data.get('ra') and validated_data.get('dec'):
+        if validated_data.get('ra') or validated_data.get('dec'):
+            if not validated_data.get('ra'):
+                raise serializers.ValidationError(
+                    {'ra': _(f'The field "ra" is required for ICRS targets')}
+                )
+            elif not validated_data.get('dec'):
+                raise serializers.ValidationError(
+                    {'dec': _(f'The field "dec" is required for ICRS targets')}
+                )
             validated_data['target_type'] = TargetTypes.ICRS.name
         else:
             # Check how many if any fields are missing from the orbital element types to see what error to return

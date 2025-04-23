@@ -36,6 +36,26 @@ This project uses poetry for dependency management. To develop with this project
     poetry run python manage.py migrate
     poetry run python manage.py runserver
 
+You will likely want to override some settings for local development, so create a `local_settings.py` file in the root directory and fill it in with something like this:
+
+```python
+from heroic_base.settings import *
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = (
+    'rest_framework.authentication.SessionAuthentication',
+    'rest_framework.authentication.TokenAuthentication',
+)
+
+CSRF_TRUSTED_ORIGINS = ['http://localhost:5173','http://127.0.0.1:5173','http://*']
+CORS_ORIGIN_ALLOW_ALL = True
+CORS_ALLOW_CREDENTIALS = True
+```
+
+You will also want to create a local superuser account to interact with the admin interface and get its API token to interact with the api.
 
 ## Tests
 Unit tests can be run with:
