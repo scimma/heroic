@@ -1,5 +1,6 @@
 from math import cos, radians
 from datetime import datetime, timedelta
+from django.utils import timezone
 
 from heroic_api.models import Telescope, TargetTypes
 
@@ -192,3 +193,9 @@ def get_airmass_by_telescope_for_target(data: dict) -> dict:
                 )
                 airmass_data[telescope.id]['airmasses'] = airmasses
     return airmass_data
+
+def telescope_dark_intervals(telescope: Telescope, start: datetime = timezone.now(), end: datetime = (timezone.now() + timedelta(hours=36))) -> list:
+    rise_set_site = get_rise_set_site(telescope)
+    visibility = get_rise_set_visibility(rise_set_site, start, end, telescope)
+    dark_intervals = visibility.get_dark_intervals()
+    return dark_intervals
