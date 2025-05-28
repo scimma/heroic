@@ -54,7 +54,7 @@ class TelescopePointingSerializer(serializers.ModelSerializer):
         instrument = validated_data.get('instrument')
         if instrument:
             if instrument.telescope.id != validated_data.get('telescope').id:
-                raise serializers.ValidationError({'instrument': _(f'Instrument {instrument.id} is not on Telescope {validated_data.get('telescope').id}')})
+                raise serializers.ValidationError({'instrument': _(f'Instrument {instrument.id} is not on Telescope {validated_data.get("telescope").id}')})
 
         return validated_data
 
