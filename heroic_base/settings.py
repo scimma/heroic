@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'django.contrib.gis',
     'django.contrib.staticfiles',
     'django_filters',
     'corsheaders',
@@ -85,10 +86,14 @@ WSGI_APPLICATION = 'heroic_base.wsgi.application'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+   'default': {
+       'ENGINE': os.getenv('DB_ENGINE', 'django.contrib.gis.db.backends.postgis'),
+       'NAME': os.getenv('DB_NAME', 'heroic'),
+       'USER': os.getenv('DB_USER', 'postgres'),
+       'PASSWORD': os.getenv('DB_PASS', 'postgres'),
+       'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+       'PORT': os.getenv('DB_PORT', '5432'),
+   },
 }
 
 

@@ -2,6 +2,7 @@ from rest_framework.test import APITestCase
 from mixer.backend.django import mixer
 from django.contrib.auth.models import User
 from django.urls import reverse
+from django.utils import timezone
 
 from heroic_api import models
 
@@ -147,6 +148,83 @@ class TestCreateApi(APITestCase):
         self.assertContains(response, 'Instrument id must follow the format', status_code=400)
 
 
+class TestTelescopePointing(APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(self.user)
+        self.observatory = mixer.blend(models.Observatory, admin=self.user, id='observatory')
+        self.site = mixer.blend(models.Site, observatory=self.observatory, id='observatory.site')
+        self.telescope = mixer.blend(models.Telescope, site=self.site, id='observatory.site.tel1')
+        self.other_telescope = mixer.blend(models.Telescope, site=self.site, id='observatory.site.tel2')
+        self.instrument = mixer.blend(models.Instrument, telescope=self.telescope, id='observatory.site.tel1.inst1')
+        self.other_instrument = mixer.blend(models.Instrument, telescope=self.other_telescope, id='observatory.site.tel2.inst1')
+        self.test_pointing = {
+            'telescope': self.telescope.id,
+            'target': 'Test Target',
+            'instrument': self.instrument.id,
+            'ra': 114.4,
+            'dec': 45.54,
+            'extra': {'start': '2024-01-11T03:32:22Z', 'end': '2024-01-12T00:00:00Z'}
+        }
+
+    def test_create_telescope_pointing(self):
+        response = self.client.post(reverse('api:telescopepointing-list'), data=self.test_pointing, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['telescope'], self.test_pointing['telescope'])
+        self.assertEqual(response.json()['ra'], self.test_pointing['ra'])
+        self.assertEqual(response.json()['dec'], self.test_pointing['dec'])
+        self.assertEqual(response.json()['extra'], self.test_pointing['extra'])
+        self.assertEqual(response.json()['target'], self.test_pointing['target'])
+        self.assertEqual(response.json()['instrument'], self.test_pointing['instrument'])
+
+    def test_create_telescope_pointing_fails_if_not_admin_user(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        response = self.client.post(reverse('api:telescopepointing-list'), data=self.test_pointing, format='json')
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
+    def test_create_telescope_pointing_fails_if_instrument_isnt_on_telescope(self):
+        pointing = self.test_pointing.copy()
+        pointing['instrument'] = self.other_instrument.id
+        response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
+        self.assertContains(response, f'Instrument {self.other_instrument.id} is not on Telescope {self.telescope.id}', status_code=400)
+
+    def test_create_telescope_pointing_fails_if_instrument_doesnt_exist(self):
+        pointing = self.test_pointing.copy()
+        instrument_id = f'{self.telescope.id}.NotAnInstrument'
+        pointing['instrument'] = instrument_id
+        response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
+        self.assertContains(response, f'Invalid pk \\"{instrument_id}\\"', status_code=400)
+
+    def test_create_telescope_pointing_fails_if_telescope_doesnt_exist(self):
+        pointing = self.test_pointing.copy()
+        telescope_id = f'{'.'.join(self.telescope.id.split('.')[:-1])}.NotATelescope'
+        pointing['telescope'] = telescope_id
+        response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
+        self.assertContains(response, f'Invalid pk \\"{telescope_id}\\"', status_code=400)
+
+    def test_create_telescope_pointing_fails_if_ra_out_of_range(self):
+        pointing = self.test_pointing.copy()
+        pointing['ra'] = -123.3
+        response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
+        self.assertContains(response, f'Ensure this value is greater than or equal to 0.0', status_code=400)
+
+        pointing['ra'] = 361.0
+        response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
+        self.assertContains(response, f'Ensure this value is less than or equal to 360.0', status_code=400)
+
+    def test_create_telescope_pointing_fails_if_dec_out_of_range(self):
+        pointing = self.test_pointing.copy()
+        pointing['dec'] = -91.1
+        response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
+        self.assertContains(response, f'Ensure this value is greater than or equal to -90.0', status_code=400)
+
+        pointing['dec'] = 91.1
+        response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
+        self.assertContains(response, f'Ensure this value is less than or equal to 90.0', status_code=400)
+
+
 class TestTelescopeStatus(APITestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -156,7 +234,7 @@ class TestTelescopeStatus(APITestCase):
         self.site = mixer.blend(models.Site, observatory=self.observatory)
         self.telescope = mixer.blend(models.Telescope, site=self.site)
         self.instrument = mixer.blend(models.Instrument, telescope=self.telescope)
-        self.telescope_status = mixer.blend(models.TelescopeStatus, telescope=self.telescope,
+        self.telescope_status = mixer.blend(models.TelescopeStatus, telescope=self.telescope, date=timezone.now(),
                                             reason='Initial', extra={'key': 'test'})
 
     def _create_telescope_status(self, status):
@@ -237,26 +315,10 @@ class TestTelescopeStatus(APITestCase):
         response = self.client.post(reverse('api:telescope-status', args=(self.telescope.id,)), data=status, format='json')
         self.assertContains(response, 'You do not have permission', status_code=403)
 
-    def test_telescope_status_with_pointing(self):
-        status = {'telescope': self.telescope.id,
-                  'status': models.TelescopeStatus.StatusChoices.POINTING,
-                  'extra': {'start': '2024-01-11T03:32:22Z', 'end': '2024-01-12T00:00:00Z'},
-                  'ra': 32.31232,
-                  'dec': -45.23412,
-                  'instrument': self.instrument.id
-                 }
-        self._create_telescope_status(status)
-        # Now get the telescope and see that this status is blended in
-        response = self.client.get(reverse('api:telescope-detail', args=(self.telescope.id,)))
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['status'], status['status'])
-        self.assertEqual(response.json()['ra'], status['ra'])
-        self.assertEqual(response.json()['instrument'], status['instrument'])
-
     def test_getting_all_telescope_statuses_for_telescope(self):
         self.client.logout()
         # Add a second telescope status
-        second_status = mixer.blend(models.TelescopeStatus, telescope=self.telescope,
+        second_status = mixer.blend(models.TelescopeStatus, telescope=self.telescope, date=timezone.now(),
                                     reason='Second', status=models.TelescopeStatus.StatusChoices.UNAVAILABLE)
         # Test that two telescope statuses are received in latest date order
         response = self.client.get(reverse('api:telescope-status', args=(self.telescope.id,)))
@@ -280,6 +342,7 @@ class TestInstrumentCapability(APITestCase):
         self.telescope = mixer.blend(models.Telescope, site=self.site)
         self.instrument = mixer.blend(models.Instrument, telescope=self.telescope)
         self.instrument_capability = mixer.blend(models.InstrumentCapability, instrument=self.instrument,
+                                                 date=timezone.now(),
                                                  status=models.InstrumentCapability.InstrumentStatus.AVAILABLE,
                                                  optical_element_groups={'filters': {}},
                                                  operation_modes={'readout': {}}
@@ -348,7 +411,7 @@ class TestInstrumentCapability(APITestCase):
     def test_getting_all_instrument_capabilities_for_instrument(self):
         self.client.logout()
         # Add a second instrument capability
-        second_capablity = mixer.blend(models.InstrumentCapability, instrument=self.instrument,
+        second_capablity = mixer.blend(models.InstrumentCapability, instrument=self.instrument, date=timezone.now(),
                                        status=models.InstrumentCapability.InstrumentStatus.SCHEDULABLE
                                       )
         # Test that two telescope statuses are received in latest date order

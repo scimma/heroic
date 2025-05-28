@@ -1,9 +1,10 @@
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema_serializer, OpenApiExample
 from rest_framework import serializers
 from heroic_api.visibility import telescope_dark_intervals
-from heroic_api.models import (Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability,
-                     Profile, TargetTypes)
+from heroic_api.models import (Observatory, Site, Telescope, Instrument, TelescopeStatus, TelescopePointing,
+                               InstrumentCapability, Profile, TargetTypes)
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -16,12 +17,64 @@ class ProfileSerializer(serializers.ModelSerializer):
 
 
 class TelescopeStatusSerializer(serializers.ModelSerializer):
+    date = serializers.DateTimeField(required=False, default=timezone.now)
+
     class Meta:
         model = TelescopeStatus
         fields = '__all__'
 
+@extend_schema_serializer(
+    examples = [
+        OpenApiExample(
+            'Example Telescope Pointing',
+            value={
+                'id': 1,
+                'date': '2019-08-24T14:15:22Z',
+                'ra': 360,
+                'dec': -90,
+                'target': 'My Target Name',
+                'extra': {'extra_params': 'go_here'},
+                'telescope': 'telescope id',
+                'instrument': 'instrument_id'
+            }
+        )
+    ]
+)
+class TelescopePointingSerializer(serializers.ModelSerializer):
+    date = serializers.DateTimeField(required=False, default=timezone.now)
+    ra = serializers.FloatField(write_only=True, min_value=0.0, max_value=360.0)
+    dec = serializers.FloatField(write_only=True, min_value=-90.0, max_value=90.0)
+
+    class Meta:
+        model = TelescopePointing
+        exclude = ['coordinate']
+
+    def validate(self, data):
+        validated_data = super().validate(data)
+        instrument = validated_data.get('instrument')
+        if instrument:
+            if instrument.telescope.id != validated_data.get('telescope').id:
+                raise serializers.ValidationError({'instrument': _(f'Instrument {instrument.id} is not on Telescope {validated_data.get('telescope').id}')})
+
+        return validated_data
+
+    def to_internal_value(self, data):
+        internal = super().to_internal_value(data)
+        internal['coordinate'] = f'SRID=4326;POINT ({internal['ra']} {internal['dec']})'
+        del internal['ra']
+        del internal['dec']
+        return internal
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['ra'] = instance.coordinate.x
+        data['dec'] = instance.coordinate.y
+        return data
+
 
 class InstrumentCapabilitySerializer(serializers.ModelSerializer):
+    date = serializers.DateTimeField(required=False, default=timezone.now)
+
     class Meta:
         model = InstrumentCapability
         fields = '__all__'
@@ -66,6 +119,7 @@ class InstrumentSerializer(serializers.ModelSerializer):
         # If we set any instrument capability fields on creation, then create an associated InstrumentCapability instance
         if (status or optical_element_groups or operation_modes):
             InstrumentCapability.objects.create(
+                date=timezone.now(),
                 instrument=instance,
                 status=status,
                 optical_element_groups=optical_element_groups,
@@ -120,12 +174,6 @@ class TelescopeSerializer(serializers.ModelSerializer):
                 data['reason'] = current_status.reason
             if current_status.extra:
                 data['extra'] = current_status.extra
-            if current_status.ra:
-                data['ra'] = current_status.ra
-            if current_status.dec:
-                data['dec'] = current_status.dec
-            if current_status.instrument:
-                data['instrument'] = current_status.instrument.id
         except TelescopeStatus.DoesNotExist:
             pass
         return data
@@ -135,9 +183,10 @@ class TelescopeSerializer(serializers.ModelSerializer):
         reason = validated_data.pop('reason', None)
         extra = validated_data.pop('extra', {})
         instance = super().create(validated_data)
-        # If we set any instrument capability fields on creation, then create an associated InstrumentCapability instance
+        # If we set any telescope status fields on creation, then create an associated TelescopeStatus instance
         if (status or reason or extra):
             TelescopeStatus.objects.create(
+                date=timezone.now(),
                 telescope=instance,
                 status=status,
                 reason=reason,

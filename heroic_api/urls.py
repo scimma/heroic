@@ -1,7 +1,7 @@
 from django.urls import re_path, include
 from rest_framework.routers import DefaultRouter
 from heroic_api.viewsets import (
-    ObservatoryViewSet, SiteViewSet, TelescopeViewSet,
+    ObservatoryViewSet, SiteViewSet, TelescopeViewSet, TelescopePointingViewSet,
     InstrumentViewSet, TelescopeStatusViewSet, InstrumentCapabilityViewSet
 )
 from heroic_api.views import ProfileAPIView, TargetVisibilityAPIView, TargetAirmassAPIView
@@ -13,6 +13,7 @@ router.register(r'sites', SiteViewSet)
 router.register(r'telescopes', TelescopeViewSet)
 router.register(r'instruments', InstrumentViewSet)
 router.register(r'telescope-statuses', TelescopeStatusViewSet)
+router.register(r'telescope-pointings', TelescopePointingViewSet)
 router.register(r'instrument-capabilities', InstrumentCapabilityViewSet)
 
 urlpatterns = [
