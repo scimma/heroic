@@ -60,7 +60,7 @@ class TelescopePointingSerializer(serializers.ModelSerializer):
 
     def to_internal_value(self, data):
         internal = super().to_internal_value(data)
-        internal['coordinate'] = f'SRID=4326;POINT ({internal['ra']} {internal['dec']})'
+        internal['coordinate'] = f'SRID=4326;POINT ({internal["ra"]} {internal["dec"]})'
         del internal['ra']
         del internal['dec']
         return internal
