@@ -199,7 +199,7 @@ class TestTelescopePointing(APITestCase):
 
     def test_create_telescope_pointing_fails_if_telescope_doesnt_exist(self):
         pointing = self.test_pointing.copy()
-        telescope_id = f'{'.'.join(self.telescope.id.split('.')[:-1])}.NotATelescope'
+        telescope_id = f'{".".join(self.telescope.id.split(".")[:-1])}.NotATelescope'
         pointing['telescope'] = telescope_id
         response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
         self.assertContains(response, f'Invalid pk \\"{telescope_id}\\"', status_code=400)
