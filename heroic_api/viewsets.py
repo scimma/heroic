@@ -10,7 +10,7 @@ from heroic_api.filters import TelescopeFilter, InstrumentFilter, TelescopeStatu
 from heroic_api.models import Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability
 from heroic_api.serializers import (
     ObservatorySerializer, SiteSerializer, TelescopeSerializer, TelescopeDarkIntervalsSerializer,
-    InstrumentSerializer, TelescopeStatusSerializer, InstrumentCapabilitySerializer, TelescopePointingSerializer,
+    InstrumentSerializer, TelescopeStatusSerializer, InstrumentCapabilitySerializer,
     TelescopeDarkIntervalResponseSerializer
 )
 from heroic_api.permissions import IsObservatoryAdminOrReadOnly, IsAdminOrReadOnly
