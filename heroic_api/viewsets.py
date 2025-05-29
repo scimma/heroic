@@ -2,10 +2,13 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
+from django_filters.rest_framework import DjangoFilterBackend
 
+from heroic_api.visibility import telescope_dark_intervals
+from heroic_api.filters import TelescopeFilter, InstrumentFilter, TelescopeStatusFilter, InstrumentCapabilityFilter
 from heroic_api.models import Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability
 from heroic_api.serializers import (
-    ObservatorySerializer, SiteSerializer, TelescopeSerializer,
+    ObservatorySerializer, SiteSerializer, TelescopeSerializer, TargetDarkIntervalsSerializer,
     InstrumentSerializer, TelescopeStatusSerializer, InstrumentCapabilitySerializer
 )
 from heroic_api.permissions import IsObservatoryAdminOrReadOnly, IsAdminOrReadOnly
@@ -29,6 +32,40 @@ class TelescopeViewSet(viewsets.ModelViewSet):
     queryset = Telescope.objects.all()
     serializer_class = TelescopeSerializer
     permission_classes = [IsObservatoryAdminOrReadOnly]
+    filterset_class = TelescopeFilter
+    filter_backends = (DjangoFilterBackend,)
+
+    @action(detail=False, methods=['get'], url_path='dark_intervals')
+    def dark_intervals_list(self, request):
+        params = request.query_params.dict()
+        # Needed to correctly pass list params
+        params['telescopes'] = request.query_params.getlist('telescopes')
+        serializer = TargetDarkIntervalsSerializer(data=params)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            dark_intervals_by_telescope = {}
+            for telescope in data['telescopes']:
+                dark_intervals_by_telescope[telescope.id] = telescope_dark_intervals(
+                    telescope, start=data['start'], end=data['end'])
+            return Response(dark_intervals_by_telescope, status=status.HTTP_200_OK)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], url_path='dark_intervals')
+    def dark_intervals(self, request, pk=None):
+        params = request.query_params.dict()
+        # Needed to correctly pass list params
+        params['telescopes'] = request.query_params.getlist('telescopes', [pk])
+        serializer = TargetDarkIntervalsSerializer(data=params)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            dark_intervals_by_telescope = {}
+            for telescope in data['telescopes']:
+                dark_intervals_by_telescope[telescope.id] = telescope_dark_intervals(
+                    telescope, start=data['start'], end=data['end'])
+            return Response(dark_intervals_by_telescope, status=status.HTTP_200_OK)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['get', 'post'])
     def status(self, request, pk=None):
@@ -51,6 +88,8 @@ class InstrumentViewSet(viewsets.ModelViewSet):
     queryset = Instrument.objects.all()
     serializer_class = InstrumentSerializer
     permission_classes = [IsObservatoryAdminOrReadOnly]
+    filterset_class = InstrumentFilter
+    filter_backends = (DjangoFilterBackend,)
 
     @action(detail=True, methods=['get', 'post'])
     def capabilities(self, request, pk=None):
@@ -72,9 +111,13 @@ class TelescopeStatusViewSet(viewsets.ModelViewSet):
     queryset = TelescopeStatus.objects.all()
     serializer_class = TelescopeStatusSerializer
     permission_classes = [IsObservatoryAdminOrReadOnly]
+    filterset_class = TelescopeStatusFilter
+    filter_backends = (DjangoFilterBackend,)
 
 
 class InstrumentCapabilityViewSet(viewsets.ModelViewSet):
     queryset = InstrumentCapability.objects.all()
     serializer_class = InstrumentCapabilitySerializer
     permission_classes = [IsObservatoryAdminOrReadOnly]
+    filterset_class = InstrumentCapabilityFilter
+    filter_backends = (DjangoFilterBackend,)

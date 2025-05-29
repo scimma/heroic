@@ -1,6 +1,8 @@
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 from rest_framework import serializers
-from .models import (Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability,
+from heroic_api.visibility import telescope_dark_intervals
+from heroic_api.models import (Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability,
                      Profile, TargetTypes)
 
 
@@ -48,6 +50,7 @@ class InstrumentSerializer(serializers.ModelSerializer):
         # Add in the current instrument capability into the response
         try:
             current_capability = instance.capabilities.latest()
+            data['last_capability_update'] = current_capability.date
             data['status'] = current_capability.status
             data['optical_element_groups'] = current_capability.optical_element_groups
             data['operation_modes'] = current_capability.operation_modes
@@ -78,10 +81,24 @@ class TelescopeSerializer(serializers.ModelSerializer):
     status = serializers.ChoiceField(choices=TelescopeStatus.StatusChoices.choices,
                                      write_only=True, required=False)
     reason = serializers.CharField(write_only=True, required=False)
+    next_twilight = serializers.SerializerMethodField(read_only=True, required=False)
 
     class Meta:
         model = Telescope
         fields = '__all__'
+
+    def get_next_twilight(self, obj):
+        ''' This returns an array of either one or two twilights, depending on if we are currently within
+            a twilight period or not. If in twilight, it returns now to the end for the first plust the whole
+            next twilight, otherwise it just returns the whole next twilight.
+        '''
+        dark_intervals = telescope_dark_intervals(obj)
+        if dark_intervals[0][0] < timezone.now():
+            # We are within the first interval, so show that plus one more
+            return dark_intervals[:2]
+        else:
+            # The first interval is in the future, so only return it
+            return dark_intervals[:1]
 
     def validate(self, data):
         validated_data = super().validate(data)
@@ -98,6 +115,7 @@ class TelescopeSerializer(serializers.ModelSerializer):
         try:
             current_status = instance.statuses.latest()
             data['status'] = current_status.status
+            data['last_status_update'] = current_status.date
             if current_status.reason:
                 data['reason'] = current_status.reason
             if current_status.extra:
@@ -149,6 +167,29 @@ class ObservatorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Observatory
         fields = '__all__'
+
+
+class TargetDarkIntervalsSerializer(serializers.Serializer):
+    start = serializers.DateTimeField(required=True)
+    end = serializers.DateTimeField(required=True)
+    telescopes = serializers.SlugRelatedField(
+        slug_field='id', queryset=Telescope.objects.all(), many=True, required=False, allow_null=True
+    )
+
+    def validate(self, data):
+        validated_data = super().validate(data)
+
+        # Validate start is < end time
+        if validated_data['start'] >= validated_data['end']:
+            raise serializers.ValidationError(
+                {'end': _('The end datetime must be greater than the start datetime')}
+            )
+
+        # If no specific telescopes were choosen, assume all will be used
+        if not validated_data.get('telescopes'):
+            validated_data['telescopes'] = list(Telescope.objects.all())
+
+        return validated_data
 
 
 class TargetVisibilityQuerySerializer(serializers.Serializer):

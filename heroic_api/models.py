@@ -48,6 +48,12 @@ class Site(models.Model):
         validators=[MinValueValidator(-500.0), MaxValueValidator(100000.0)],
         help_text=_('Site elevation in meters')
     )
+    weather_url = models.URLField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=_('Link to page with site weather information')
+    )
     observatory = models.ForeignKey(Observatory, on_delete=models.CASCADE, related_name="sites")
 
     def __str__(self):
@@ -91,6 +97,12 @@ class Telescope(models.Model):
         validators=[MinValueValidator(0), MaxValueValidator(180)],
         help_text=_('For AltAz telescopes, radius of zenith blind spot in degrees')
     )
+    telescope_url = models.URLField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=_('Link to page with telescope information')
+    )
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="telescopes")
 
     def __str__(self):
@@ -105,6 +117,12 @@ class Instrument(models.Model):
     id = models.CharField(max_length=255, primary_key=True)
     name = models.CharField(max_length=255, help_text=_('Instrument name'))
     available = models.BooleanField(default=True, help_text=_('Whether this Instrument is available or not'))
+    instrument_url = models.URLField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=_('Link to page with instrument information')
+    )
     telescope = models.ForeignKey(Telescope, on_delete=models.CASCADE, related_name="instruments")
 
     def __str__(self):
