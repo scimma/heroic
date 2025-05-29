@@ -16,6 +16,21 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
+    services:
+      postgres:
+        image: postgis/postgis:latest
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: heroic
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     steps:
     - name: Check out repository
       uses: actions/checkout@v2
@@ -25,6 +40,8 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
+        sudo apt-get update
+        sudo apt-get install gdal-bin libgdal-dev 
         python -m pip install --upgrade pip
         python -m pip install 'poetry'
         poetry install
@@ -32,6 +49,11 @@ jobs:
       run: |
         poetry run coverage run manage.py test
         poetry run coverage xml
+      env:
+        DB_USER: postgres
+        DB_PASS: postgres
+        DB_HOST: localhost
+        DB_PORT: 5432
     - name: Generate and send coveralls report
       uses: coverallsapp/github-action@v2.3.0
       with:
