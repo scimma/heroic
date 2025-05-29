@@ -169,7 +169,7 @@ class ObservatorySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class TargetDarkIntervalsSerializer(serializers.Serializer):
+class TelescopeDarkIntervalsSerializer(serializers.Serializer):
     start = serializers.DateTimeField(required=True)
     end = serializers.DateTimeField(required=True)
     telescopes = serializers.SlugRelatedField(
@@ -372,3 +372,8 @@ class TargetVisibilityAirmassSubSerializer(serializers.Serializer):
 
 class TargetVisibilityAirmassResponseSerializer(serializers.Serializer):
     telescope_id = TargetVisibilityAirmassSubSerializer()
+
+
+class TelescopeDarkIntervalResponseSerializer(serializers.Serializer):
+    telescope_id = serializers.ListField(child=serializers.ListField(
+        child=serializers.DateTimeField(), min_length=2, max_length=2), allow_empty=True)

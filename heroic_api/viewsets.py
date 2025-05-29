@@ -2,14 +2,16 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from django_filters.rest_framework import DjangoFilterBackend
 
 from heroic_api.visibility import telescope_dark_intervals
 from heroic_api.filters import TelescopeFilter, InstrumentFilter, TelescopeStatusFilter, InstrumentCapabilityFilter
 from heroic_api.models import Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability
 from heroic_api.serializers import (
-    ObservatorySerializer, SiteSerializer, TelescopeSerializer, TargetDarkIntervalsSerializer,
-    InstrumentSerializer, TelescopeStatusSerializer, InstrumentCapabilitySerializer
+    ObservatorySerializer, SiteSerializer, TelescopeSerializer, TelescopeDarkIntervalsSerializer,
+    InstrumentSerializer, TelescopeStatusSerializer, InstrumentCapabilitySerializer, TelescopePointingSerializer,
+    TelescopeDarkIntervalResponseSerializer
 )
 from heroic_api.permissions import IsObservatoryAdminOrReadOnly, IsAdminOrReadOnly
 
@@ -34,13 +36,59 @@ class TelescopeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsObservatoryAdminOrReadOnly]
     filterset_class = TelescopeFilter
     filter_backends = (DjangoFilterBackend,)
+    dark_interval_response_example = {
+        'telescope_id_1': [
+            ['2019-08-24T14:15:22Z', '2019-08-24T16:15:22Z'],
+            ['2019-08-25T14:15:22Z', '2019-08-25T16:15:22Z']
+        ],
+        'telescope_id_2': [
+            ['2019-08-24T14:15:22Z', '2019-08-24T16:15:22Z'],
+            ['2019-08-25T14:15:22Z', '2019-08-25T16:15:22Z']
+        ],
+    }
+    
+    def get_serializer_class(self):
+        if 'dark_intervals' in self.action:
+            return TelescopeDarkIntervalsSerializer
+        elif self.action == 'status':
+            return TelescopeStatusSerializer
+        return super().get_serializer_class()
 
+    @extend_schema(
+        parameters=[TelescopeDarkIntervalsSerializer],
+        responses={
+            200: OpenApiResponse(
+                response=TelescopeDarkIntervalResponseSerializer,
+                examples=[OpenApiExample(name='Success',
+                    value=dark_interval_response_example
+                )]
+           )
+        },
+        examples = [
+            OpenApiExample(
+                'Example Dark Intervals Request',
+                value={
+                    'id': 1,
+                    'start': '2019-08-24T14:15:22Z',
+                    'end': '2019-08-25T14:15:22Z',
+                    'telescopes': ['telescope_id_1', 'telescope_id_2']
+                },
+                request_only=True
+            ),
+            OpenApiExample(
+                'Example Dark Intervals Response',
+                value=dark_interval_response_example,
+                response_only=True
+            ) 
+        ]
+    )
     @action(detail=False, methods=['get'], url_path='dark_intervals')
     def dark_intervals_list(self, request):
+        
         params = request.query_params.dict()
         # Needed to correctly pass list params
         params['telescopes'] = request.query_params.getlist('telescopes')
-        serializer = TargetDarkIntervalsSerializer(data=params)
+        serializer = TelescopeDarkIntervalsSerializer(data=params)
         if serializer.is_valid():
             data = serializer.validated_data
             dark_intervals_by_telescope = {}
@@ -51,12 +99,40 @@ class TelescopeViewSet(viewsets.ModelViewSet):
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        parameters=[TelescopeDarkIntervalsSerializer],
+        responses={
+            200: OpenApiResponse(
+                response=TelescopeDarkIntervalResponseSerializer,
+                examples=[OpenApiExample(name='Success',
+                    value=dark_interval_response_example
+                )]
+           )
+        },
+        examples = [
+            OpenApiExample(
+                'Example Dark Intervals Request',
+                value={
+                    'id': 1,
+                    'start': '2019-08-24T14:15:22Z',
+                    'end': '2019-08-25T14:15:22Z',
+                    'telescopes': ['telescope_id_1', 'telescope_id_2']
+                },
+                request_only=True
+            ),
+            OpenApiExample(
+                'Example Dark Intervals Response',
+                value=dark_interval_response_example,
+                response_only=True
+            ) 
+        ]
+    )
     @action(detail=True, methods=['get'], url_path='dark_intervals')
     def dark_intervals(self, request, pk=None):
         params = request.query_params.dict()
         # Needed to correctly pass list params
         params['telescopes'] = request.query_params.getlist('telescopes', [pk])
-        serializer = TargetDarkIntervalsSerializer(data=params)
+        serializer = TelescopeDarkIntervalsSerializer(data=params)
         if serializer.is_valid():
             data = serializer.validated_data
             dark_intervals_by_telescope = {}
@@ -67,7 +143,14 @@ class TelescopeViewSet(viewsets.ModelViewSet):
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, methods=['get', 'post'])
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                response=TelescopeStatusSerializer(many=True)
+           )
+        },
+    )
+    @action(detail=True, methods=['get', 'post'], pagination_class=None)
     def status(self, request, pk=None):
         if request.method == 'GET':
             serializer = TelescopeStatusSerializer(self.get_object().statuses.all(), many=True)
@@ -91,7 +174,14 @@ class InstrumentViewSet(viewsets.ModelViewSet):
     filterset_class = InstrumentFilter
     filter_backends = (DjangoFilterBackend,)
 
-    @action(detail=True, methods=['get', 'post'])
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                response=InstrumentCapabilitySerializer(many=True)
+           )
+        },
+    )
+    @action(detail=True, methods=['get', 'post'], pagination_class=None)
     def capabilities(self, request, pk=None):
         if request.method == 'GET':
             serializer = InstrumentCapabilitySerializer(self.get_object().capabilities.all(), many=True)
