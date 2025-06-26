@@ -19,7 +19,7 @@ class SCiMMAAuthSessionRefresh:
         # Check the oidc token expiration - if expired, return a HTTP 401 to indicate client should logout
         oidc_expiration_seconds = request.session.get('oidc_id_token_expiration')
         if oidc_expiration_seconds:
-            if datetime.datetime.utcnow() > datetime.datetime.fromtimestamp(float(oidc_expiration_seconds)):
+            if datetime.datetime.now(datetime.timezone.utc) > datetime.datetime.fromtimestamp(float(oidc_expiration_seconds)):
                 logger.debug(f"OIDC login has expired for user {request.user}, forcing logout and returning 401")
                 logout(request)
                 return HttpResponse('Unauthorized', status=401)

@@ -92,6 +92,8 @@ class InstrumentSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         validated_data = super().validate(data)
+        if self.instance:
+            validated_data['id'] = self.instance.id
         split_id = validated_data.get('id', '').rsplit('.', 1)
         if len(split_id) != 2 or split_id[0] != validated_data.get('telescope').id:
             raise serializers.ValidationError(_("Instrument id must follow the format 'observatory.site.telescope.instrument'"))
@@ -156,6 +158,8 @@ class TelescopeSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         validated_data = super().validate(data)
+        if self.instance:
+            validated_data['id'] = self.instance.id
         split_id = validated_data.get('id', '').rsplit('.', 1)
         if len(split_id) != 2 or split_id[0] != validated_data.get('site').id:
             raise serializers.ValidationError(_("Telescope id must follow the format 'observatory.site.telescope'"))
@@ -204,6 +208,8 @@ class SiteSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         validated_data = super().validate(data)
+        if self.instance:
+            validated_data['id'] = self.instance.id
         split_id = validated_data.get('id', '').rsplit('.', 1)
         if len(split_id) != 2 or split_id[0] != validated_data.get('observatory').id:
             raise serializers.ValidationError(_("Site id must follow the format 'observatory.site'"))

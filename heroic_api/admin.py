@@ -173,7 +173,13 @@ class UserProxyAdmin(admin.ModelAdmin):
     search_fields = ('email', 'first_name', 'last_name')
 
 
+class ProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'credential_name')
+    search_fields = ('user', 'credential_name')
+
+
 admin.site.register(models.UserProxy, UserProxyAdmin)
+admin.site.register(models.Profile, ProfileAdmin)
 admin.site.register(models.InstrumentCapability, InstrumentCapabilityAdmin)
 admin.site.register(models.TelescopeStatus, TelescopeStatusAdmin)
 admin.site.register(models.TelescopePointing, TelescopePointingAdmin)
