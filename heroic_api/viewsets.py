@@ -6,11 +6,13 @@ from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 from django_filters.rest_framework import DjangoFilterBackend
 
 from heroic_api.visibility import telescope_dark_intervals
-from heroic_api.filters import TelescopeFilter, InstrumentFilter, TelescopeStatusFilter, InstrumentCapabilityFilter
-from heroic_api.models import Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability
+from heroic_api.filters import (TelescopeFilter, InstrumentFilter, TelescopeStatusFilter, InstrumentCapabilityFilter,
+                                TelescopePointingFilter)
+from heroic_api.models import (Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability,
+                               TelescopePointing)
 from heroic_api.serializers import (
     ObservatorySerializer, SiteSerializer, TelescopeSerializer, TelescopeDarkIntervalsSerializer,
-    InstrumentSerializer, TelescopeStatusSerializer, InstrumentCapabilitySerializer,
+    InstrumentSerializer, TelescopeStatusSerializer, InstrumentCapabilitySerializer, TelescopePointingSerializer,
     TelescopeDarkIntervalResponseSerializer
 )
 from heroic_api.permissions import IsObservatoryAdminOrReadOnly, IsAdminOrReadOnly
@@ -202,6 +204,14 @@ class TelescopeStatusViewSet(viewsets.ModelViewSet):
     serializer_class = TelescopeStatusSerializer
     permission_classes = [IsObservatoryAdminOrReadOnly]
     filterset_class = TelescopeStatusFilter
+    filter_backends = (DjangoFilterBackend,)
+
+
+class TelescopePointingViewSet(viewsets.ModelViewSet):
+    queryset = TelescopePointing.objects.all()
+    serializer_class = TelescopePointingSerializer
+    permission_classes = [IsObservatoryAdminOrReadOnly]
+    filterset_class = TelescopePointingFilter
     filter_backends = (DjangoFilterBackend,)
 
 

@@ -1,10 +1,47 @@
 from django import forms
 from django.contrib import admin
+from django.contrib.gis.geos import Point
+from django.contrib.gis.db.models import PointField
+from django.contrib.gis import forms as gis_forms
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 import json
 
 from heroic_api import models
+
+
+class RaDecWidget(forms.MultiWidget):
+    def __init__(self, attrs=None, date_format=None, time_format=None):
+        widgets = (forms.TextInput(attrs={'placeholder': 'RA (degrees)'}),
+                   forms.TextInput(attrs={'placeholder': 'Dec (degrees)'}))
+        super(RaDecWidget, self).__init__(widgets, attrs)
+
+    def decompress(self, value):
+        if value:
+            return tuple(value.coords)
+        return (None, None)
+
+    def value_from_datadict(self, data, files, name):
+        ra = data[name + '_0']
+        dec = data[name + '_1']
+
+        try:
+            return Point(float(ra), float(dec), srid=4326)
+        except ValueError:
+            return None
+
+
+class RaDecFormField(gis_forms.PointField):
+    widget = RaDecWidget
+
+    def to_python(self, value):
+        if isinstance(value, str):
+            try:
+                ra, dec = map(float, value.split(','))
+                return Point(ra, dec, srid=4326)
+            except (ValueError, TypeError):
+                return None
+        return super().to_python(value)
 
 
 class PrettyJSONEncoder(json.JSONEncoder):
@@ -55,6 +92,17 @@ class TelescopeStatusAdmin(admin.ModelAdmin):
 class LatestTelescopeStatusInline(LatestInline):
     model = models.TelescopeStatus
     verbose_name = 'Current Telescope Status'
+
+
+class TelescopePointingAdmin(admin.ModelAdmin):
+    extra = forms.JSONField(encoder=PrettyJSONEncoder)
+    list_display = ('date', 'telescope', 'instrument', 'target')
+    list_filter = ('telescope__name', 'telescope__site__name', 'telescope__site__observatory__name', 'instrument__name')
+    search_fields = ('telescope__name', 'telescope__id', 'target', 'instrument__name')
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if isinstance(db_field, PointField):
+            return RaDecFormField(**kwargs)
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
 
 
 class InstrumentAdmin(admin.ModelAdmin):
@@ -125,9 +173,16 @@ class UserProxyAdmin(admin.ModelAdmin):
     search_fields = ('email', 'first_name', 'last_name')
 
 
+class ProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'credential_name')
+    search_fields = ('user', 'credential_name')
+
+
 admin.site.register(models.UserProxy, UserProxyAdmin)
+admin.site.register(models.Profile, ProfileAdmin)
 admin.site.register(models.InstrumentCapability, InstrumentCapabilityAdmin)
 admin.site.register(models.TelescopeStatus, TelescopeStatusAdmin)
+admin.site.register(models.TelescopePointing, TelescopePointingAdmin)
 admin.site.register(models.Instrument, InstrumentAdmin)
 admin.site.register(models.Telescope, TelescopeAdmin)
 admin.site.register(models.Site, SiteAdmin)

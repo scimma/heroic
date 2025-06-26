@@ -1,9 +1,9 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.contrib.gis.db import models as gis_models
 from django.utils.translation import gettext_lazy as _
-from django.contrib.auth.models import User, AbstractUser
+from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
-from django.contrib.auth.models import AbstractUser
 
 
 class UserProxy(User):
@@ -141,11 +141,10 @@ class TelescopeStatus(models.Model):
 
     class StatusChoices(models.TextChoices):
         AVAILABLE = 'AVAILABLE', _('Available')
-        POINTING = 'POINTING', _('Pointing')
         UNAVAILABLE = 'UNAVAILABLE', _('Unavailable')
         SCHEDULABLE = 'SCHEDULABLE', _('Schedulable')
 
-    date = models.DateTimeField(auto_now_add=True, db_index=True)
+    date = models.DateTimeField(db_index=True)
     telescope = models.ForeignKey(Telescope, on_delete=models.CASCADE, related_name="statuses")
     status = models.CharField(
         max_length=20, choices=StatusChoices.choices,
@@ -154,24 +153,7 @@ class TelescopeStatus(models.Model):
     reason = models.TextField(blank=True, null=True, help_text=_('Reason for current telescope status'))
     extra = models.JSONField(
         blank=True, default=dict,
-        help_text=_('Extra data related to current telescope status or pointing')
-    )
-
-    # These fields are just used for a Pointing type status message, to show what instrument pointed where
-    target = models.CharField(max_length=255, blank=True, null=True, help_text=_('Target name for current pointing'))
-    ra = models.FloatField(
-        blank=True, null=True,
-        validators=[MinValueValidator(0.0), MaxValueValidator(360.0)],
-        help_text=_('Target Right Ascension for current pointing in decimal degrees')
-    )
-    dec = models.FloatField(
-        blank=True, null=True,
-        validators=[MinValueValidator(-90.0), MaxValueValidator(90.0)],
-        help_text=_('Target Declination for current pointing in decimal degrees')
-    )
-    instrument = models.ForeignKey(
-        Instrument, on_delete=models.SET_NULL, blank=True, null=True,
-        help_text=_('Instrument reference for current pointing')
+        help_text=_('Extra data related to current telescope status')
     )
 
     def __str__(self):
@@ -180,6 +162,35 @@ class TelescopeStatus(models.Model):
     @property
     def observatory(self):
         return self.telescope.observatory
+
+
+class TelescopePointing(models.Model):
+
+    class Meta:
+        verbose_name_plural = 'Telescope Pointings'
+        get_latest_by = 'date'
+        ordering = ['-date']
+
+    date = models.DateTimeField(db_index=True)
+    telescope = models.ForeignKey(Telescope, on_delete=models.CASCADE, related_name="pointings")
+    instrument = models.ForeignKey(
+        Instrument, on_delete=models.SET_NULL, blank=True, null=True, related_name="pointings",
+        help_text=_('Instrument reference for current pointing')
+    )
+    target = models.CharField(max_length=255, blank=True, null=True, help_text=_('Target name for current pointing'))
+    coordinate = gis_models.PointField(help_text='Target ra/dec for the current pointing in decimal degrees')
+    extra = models.JSONField(
+        blank=True, default=dict,
+        help_text=_('Extra data related to current pointing')
+    )
+
+    def __str__(self):
+        return f"{self.telescope.name} - pointing to {self.coordinate.x}, {self.coordinate.y} at {self.date}"
+
+    @property
+    def observatory(self):
+        return self.telescope.observatory
+
 
 class InstrumentCapability(models.Model):
 
@@ -193,7 +204,7 @@ class InstrumentCapability(models.Model):
         UNAVAILABLE = 'UNAVAILABLE', _('Unavailable')
         SCHEDULABLE = 'SCHEDULABLE', _('Schedulable')
 
-    date = models.DateTimeField(auto_now_add=True, db_index=True)
+    date = models.DateTimeField(db_index=True)
     instrument = models.ForeignKey(Instrument, on_delete=models.CASCADE, related_name="capabilities")
     status = models.CharField(
         max_length=32, choices=InstrumentStatus.choices,
