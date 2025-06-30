@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgis/postgis:15-3.3
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB:       "${DB_NAME}"
+      POSTGRES_USER:     "${DB_USER}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+    volumes:
+      - heroic_data:/var/lib/postgresql/data
+    networks:
+      - heroic_net
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: heroic-web
+    restart: always
+    env_file:
+      - .env
+    environment:
+      DB_HOST:     db
+      DB_PORT:     "5432"
+      DB_NAME:     "${DB_NAME}"
+      DB_USER:     "${DB_USER}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+      GUNICORN_WORKERS: "${GUNICORN_WORKERS:-2}"
+    depends_on:
+      - db
+    volumes:
+      - static_data:/app/static
+    ports:
+      - "8000:8000"
+    networks:
+      - heroic_net
+
+  nginx:
+    image: nginx:alpine
+    restart: always
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - static_data:/app/static:ro
+      - /etc/letsencrypt/live/heroic.scimma.org:/etc/letsencrypt/live/heroic.scimma.org:ro
+      - /etc/letsencrypt/archive/heroic.scimma.org:/etc/letsencrypt/archive/heroic.scimma.org:ro
+    networks:
+      - heroic_net
+
+volumes:
+  heroic_data:
+  static_data:
+
+networks:
+  heroic_net:
+    driver: bridge
