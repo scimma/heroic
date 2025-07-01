@@ -12,6 +12,7 @@ local_settings.py
 *.userosscache
 *.sln.docstates
 *.sqlite3
+.env
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
