@@ -21,14 +21,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'asdfwea234asdf3wa')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG').lower() == 'true'
+DEBUG = os.getenv('DJANGO_DEBUG', 'true').lower() == 'true'
 
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.getenv('DJANGO_ALLOWED_HOSTS').split(',')
+    for host in os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',')
     if host.strip()
 ]
 
@@ -92,10 +92,10 @@ WSGI_APPLICATION = 'heroic_base.wsgi.application'
 DATABASES = {
    'default': {
        'ENGINE': os.getenv('DB_ENGINE', 'django.contrib.gis.db.backends.postgis'),
-       'NAME': os.getenv('DB_NAME'),
-       'USER': os.getenv('DB_USER'),
-       'PASSWORD': os.getenv('DB_PASSWORD'),
-       'HOST': os.getenv('DB_HOST'),
+       'NAME': os.getenv('DB_NAME', 'heroic'),
+       'USER': os.getenv('DB_USER', 'postgres'),
+       'PASSWORD': os.getenv('DB_PASSWORD', 'postgres'),
+       'HOST': os.getenv('DB_HOST', '127.0.0.1'),
        'PORT': os.getenv('DB_PORT', '5432'),
    },
 }
@@ -167,16 +167,16 @@ SPECTACULAR_SETTINGS = {
     # OTHER SETTINGS
 }
 
-HEROIC_FRONT_END_BASE_URL = os.getenv('HEROIC_FRONT_END_BASE_URL', 'http://127.0.0.1:8000/')
+HEROIC_FRONT_END_BASE_URL = os.getenv('HEROIC_FRONT_END_BASE_URL', 'http://127.0.0.1:5173/')
 
 # Client ID (OIDC_RP_CLIENT_ID) and SECRET (OIDC_RP_CLIENT_SECRET)
 # are how HEROIC represents itself as the "relying party" (RP) to
 # the SCiMMA Keycloak instance (login.scimma.org) (the OP). They should
 # enter the environment as k8s secrets. Client ID and SECRET values were
 # obtained from Keycloak via SCiMMA/Chris Weaver.
-OIDC_RP_CLIENT_ID = os.getenv('OIDC_RP_CLIENT_ID')
-OIDC_RP_CLIENT_SECRET = os.getenv('OIDC_RP_CLIENT_SECRET')
-OIDC_RP_SIGN_ALGO = os.getenv('OIDC_RP_SIGN_ALGO')
+OIDC_RP_CLIENT_ID = os.getenv('OIDC_RP_CLIENT_ID', '')
+OIDC_RP_CLIENT_SECRET = os.getenv('OIDC_RP_CLIENT_SECRET', '')
+OIDC_RP_SIGN_ALGO = os.getenv('OIDC_RP_SIGN_ALGO', 'RS256')
 OIDC_STORE_ID_TOKEN = True  # Forces OIDC login to store oidc_id_token in session dict
 
 OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://login.scimma.org/realms/SCiMMA/protocol/openid-connect/auth'
@@ -198,16 +198,28 @@ ALLOW_LOGOUT_GET_METHOD = True
 # SCIMMA_AUTH_BASE_URL = 'http://127.0.0.1:8000/hopauth'  # for local development of SCiMMA Auth (scimma_admin)
 # SCIMMA_AUTH_BASE_URL = 'https://my.hop.scimma.org/hopauth'  # for prod deployment of SCiMMA Auth (scimma_admin)
 SCIMMA_AUTH_BASE_URL = os.getenv('SCIMMA_AUTH_BASE_URL', 'https://admin.dev.hop.scimma.org/hopauth')  # for dev
-SCIMMA_AUTH_USERNAME = os.getenv('SCIMMA_AUTH_USERNAME')
-SCIMMA_AUTH_PASSWORD = os.getenv('SCIMMA_AUTH_PASSWORD')
+SCIMMA_AUTH_USERNAME = os.getenv('SCIMMA_AUTH_USERNAME', '')
+SCIMMA_AUTH_PASSWORD = os.getenv('SCIMMA_AUTH_PASSWORD', '')
 
 LOGIN_URL = '/'  # This is the default redirect URL for user authentication tests
-LOGIN_REDIRECT_URL = HEROIC_FRONT_END_BASE_URL  # URL path to redirect to after login
-LOGOUT_REDIRECT_URL = HEROIC_FRONT_END_BASE_URL  # URL path to redirect to after logout
+LOGIN_REDIRECT_URL = '/login-redirect/'  # URL path to redirect to after login
+LOGOUT_REDIRECT_URL = '/logout-redirect/'  # URL path to redirect to after logout
 LOGIN_REDIRECT_URL_FAILURE = HEROIC_FRONT_END_BASE_URL  # TODO: create login failure page
 
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+CSRF_TRUSTED_ORIGINS = [
+    host.strip()
+    for host in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', 'http://127.0.0.1:5173').split(',')
+    if host.strip()
+]
+CORS_ALLOWED_ORIGINS = [
+    host.strip()
+    for host in os.getenv('DJANGO_CORS_ALLOWED_ORIGINS', 'http://127.0.0.1:5173').split(',')
+    if host.strip()
+]
+CORS_ALLOW_CREDENTIALS = True
 
 try:
     from local_settings import *

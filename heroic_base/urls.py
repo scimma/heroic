@@ -17,10 +17,13 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, re_path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+from heroic_api.views import LoginRedirectView, LogoutRedirectView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('auth/', include('mozilla_django_oidc.urls')),
+    path('login-redirect/', LoginRedirectView.as_view(), name='login-redirect'),
+    path('logout-redirect/', LogoutRedirectView.as_view(), name='logout-redirect'),
     re_path(r'^api/', include(('heroic_api.urls', 'api'), namespace='api')),  # Include heroic_api routes
     # drf-spectacular OpenAPI docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

@@ -1,16 +1,25 @@
 from rest_framework.views import APIView
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 
 from django.contrib.auth.models import User
+from django.views.generic import RedirectView
+from django.conf import settings
 
 from heroic_api.serializers import (ProfileSerializer, TargetVisibilityQuerySerializer,
                                     TargetVisibilityIntervalResponseSerializer,
                                     TargetVisibilityAirmassResponseSerializer)
 from heroic_api.visibility import get_rise_set_intervals_by_telescope_for_target, get_airmass_by_telescope_for_target
+
+import logging
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class ProfileAPIView(RetrieveUpdateAPIView):
@@ -126,3 +135,43 @@ class TargetAirmassAPIView(APIView):
     )
     def post(self, request):
         return self.get_airmass(request.data)
+
+
+class LoginRedirectView(RedirectView):
+    pattern_name = 'login-redirect'
+
+    def get(self, request, *args, **kwargs):
+
+        logger.debug(f'LoginRedirectView.get -- request.user: {request.user}')
+
+        login_redirect_url = f'{settings.HEROIC_FRONT_END_BASE_URL}'
+        logger.info(f'LoginRedirectView.get -- setting self.url and redirecting to {login_redirect_url}')
+        self.url = login_redirect_url
+
+        return super().get(request, *args, **kwargs)
+
+
+class LogoutRedirectView(RedirectView):
+    pattern_name = 'logout-redirect'
+
+    def get(self, request, *args, **kwargs):
+
+        logout_redirect_url = f'{settings.HEROIC_FRONT_END_BASE_URL}'
+        logger.info(f'LogoutRedirectView.get setting self.url and redirecting to {logout_redirect_url}')
+        self.url = logout_redirect_url
+
+        return super().get(request, *args, **kwargs)
+
+
+class RevokeApiTokenApiView(APIView):
+    """View to revoke an API token."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """A simple POST request (empty request body) with user authentication information in the HTTP header will revoke a user's API Token."""
+        request.user.auth_token.delete()
+        Token.objects.create(user=request.user)
+        return Response({'message': 'API token revoked.'}, status=status.HTTP_200_OK)
+
+    def get_endpoint_name(self):
+        return 'revokeApiToken'
