@@ -167,7 +167,7 @@ SPECTACULAR_SETTINGS = {
     # OTHER SETTINGS
 }
 
-HEROIC_FRONT_END_BASE_URL = os.getenv('HEROIC_FRONT_END_BASE_URL', 'http://127.0.0.1:8000/')
+HEROIC_FRONT_END_BASE_URL = os.getenv('HEROIC_FRONT_END_BASE_URL', 'http://127.0.0.1:5173/')
 
 # Client ID (OIDC_RP_CLIENT_ID) and SECRET (OIDC_RP_CLIENT_SECRET)
 # are how HEROIC represents itself as the "relying party" (RP) to
@@ -202,8 +202,8 @@ SCIMMA_AUTH_USERNAME = os.getenv('SCIMMA_AUTH_USERNAME')
 SCIMMA_AUTH_PASSWORD = os.getenv('SCIMMA_AUTH_PASSWORD')
 
 LOGIN_URL = '/'  # This is the default redirect URL for user authentication tests
-LOGIN_REDIRECT_URL = HEROIC_FRONT_END_BASE_URL  # URL path to redirect to after login
-LOGOUT_REDIRECT_URL = HEROIC_FRONT_END_BASE_URL  # URL path to redirect to after logout
+LOGIN_REDIRECT_URL = '/login-redirect/'  # URL path to redirect to after login
+LOGOUT_REDIRECT_URL = '/logout-redirect/'  # URL path to redirect to after logout
 LOGIN_REDIRECT_URL_FAILURE = HEROIC_FRONT_END_BASE_URL  # TODO: create login failure page
 
 USE_X_FORWARDED_HOST = True
