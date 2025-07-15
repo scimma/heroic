@@ -209,6 +209,18 @@ LOGIN_REDIRECT_URL_FAILURE = HEROIC_FRONT_END_BASE_URL  # TODO: create login fai
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+CSRF_TRUSTED_ORIGINS = [
+    host.strip()
+    for host in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', 'http://127.0.0.1:5173').split(',')
+    if host.strip()
+]
+CORS_ALLOWED_ORIGINS = [
+    host.strip()
+    for host in os.getenv('DJANGO_CORS_ALLOWED_ORIGINS', 'http://127.0.0.1:5173').split(',')
+    if host.strip()
+]
+CORS_ALLOW_CREDENTIALS = True
+
 try:
     from local_settings import *
 except ImportError:
