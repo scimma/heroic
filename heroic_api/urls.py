@@ -5,7 +5,7 @@ from heroic_api.viewsets import (
     InstrumentViewSet, TelescopeStatusViewSet, InstrumentCapabilityViewSet
 )
 from heroic_api.views import (ProfileAPIView, TargetVisibilityAPIView, TargetAirmassAPIView,
-                              RevokeApiTokenApiView)
+                              RevokeApiTokenApiView, GWVisibilityAPIView)
 
 
 router = DefaultRouter()
@@ -23,4 +23,5 @@ urlpatterns = [
     re_path(r'revoke_api_token', RevokeApiTokenApiView.as_view(), name='revoke_api_token'),
     re_path(r'visibility/intervals', TargetVisibilityAPIView.as_view(), name='visibility-intervals'),
     re_path(r'visibility/airmass', TargetAirmassAPIView.as_view(), name='visibility-airmass'),
+    re_path(r'gw/visibility', GWVisibilityAPIView.as_view(), name='gw-visibility'),
 ]

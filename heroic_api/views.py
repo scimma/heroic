@@ -12,8 +12,11 @@ from django.conf import settings
 
 from heroic_api.serializers import (ProfileSerializer, TargetVisibilityQuerySerializer,
                                     TargetVisibilityIntervalResponseSerializer,
-                                    TargetVisibilityAirmassResponseSerializer)
+                                    TargetVisibilityAirmassResponseSerializer,
+                                    GWVisibilityQuerySerializer, GWVisibilityResponseSerializer)
 from heroic_api.visibility import get_rise_set_intervals_by_telescope_for_target, get_airmass_by_telescope_for_target
+from heroic_api.gw_calculations import calculate_gw_visibility_timeline
+from heroic_api.models import TelescopeStatus
 
 import logging
 
@@ -175,3 +178,120 @@ class RevokeApiTokenApiView(APIView):
 
     def get_endpoint_name(self):
         return 'revokeApiToken'
+
+
+class GWVisibilityAPIView(APIView):
+    """API view to get GW network visibility for a sky position over time"""
+    serializer_class = GWVisibilityQuerySerializer
+    
+    @extend_schema(
+        request=GWVisibilityQuerySerializer,
+        responses={200: GWVisibilityResponseSerializer},
+        description="Calculate GW network detectability for a sky position over time",
+        examples=[
+            OpenApiExample(
+                'GW visibility query',
+                summary='Query GW network visibility',
+                description='Get horizon distance where network SNR >= 10',
+                value={
+                    'ra': 180.0,
+                    'dec': -30.0,
+                    'start': '2025-01-22T00:00:00Z',
+                    'end': '2025-01-23T00:00:00Z',
+                    'time_resolution_minutes': 15
+                }
+            )
+        ]
+    )
+    def post(self, request):
+        """Calculate GW visibility for POST request"""
+        serializer = GWVisibilityQuerySerializer(data=request.data)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            
+            try:
+                # Get telescope status data for the time range
+                telescopes_status = {}
+                for telescope in data['telescopes']:
+                    # Get all status changes in the time range
+                    statuses = TelescopeStatus.objects.filter(
+                        telescope=telescope,
+                        date__gte=data['start'],
+                        date__lte=data['end']
+                    ).order_by('date')
+                    
+                    # Convert to intervals
+                    status_intervals = []
+                    for i, status in enumerate(statuses):
+                        interval = {
+                            'start': status.date,
+                            'status': status.status,
+                            'sensitivity': status.extra.get('sensitivity', '0 Mpc')
+                        }
+                        # Set end time to next status or query end
+                        if i + 1 < len(statuses):
+                            interval['end'] = statuses[i + 1].date
+                        else:
+                            interval['end'] = data['end']
+                        
+                        status_intervals.append(interval)
+                    
+                    # Handle case where there are no status changes in range
+                    if not status_intervals:
+                        # Get the most recent status before start time
+                        latest_status = TelescopeStatus.objects.filter(
+                            telescope=telescope,
+                            date__lt=data['start']
+                        ).order_by('-date').first()
+                        
+                        if latest_status:
+                            status_intervals.append({
+                                'start': data['start'],
+                                'end': data['end'],
+                                'status': latest_status.status,
+                                'sensitivity': latest_status.extra.get('sensitivity', '0 Mpc')
+                            })
+                    
+                    telescopes_status[telescope.id] = status_intervals
+                
+                # Calculate GW visibility timeline
+                timeline = calculate_gw_visibility_timeline(
+                    telescopes_status,
+                    data['ra'],
+                    data['dec'],
+                    data['start'],
+                    data['end'],
+                    data.get('time_resolution_minutes', 15)
+                )
+                
+                response_data = {
+                    'query_info': {
+                        'ra': data['ra'],
+                        'dec': data['dec'],
+                        'start': data['start'].isoformat(),
+                        'end': data['end'].isoformat(),
+                        'telescopes': [t.id for t in data['telescopes']],
+                        'time_resolution_minutes': data.get('time_resolution_minutes', 15)
+                    },
+                    'timeline': timeline
+                }
+                
+                from rest_framework import status as http_status
+                return Response(response_data, status=http_status.HTTP_200_OK)
+            except Exception as e:
+                logger.error(f"Error in GW visibility calculation: {str(e)}", exc_info=True)
+                from rest_framework import status as http_status
+                return Response(
+                    {'error': f'Internal server error: {str(e)}'}, 
+                    status=http_status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        else:
+            from rest_framework import status as http_status
+            return Response(serializer.errors, status=http_status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request):
+        """Handle GET requests by converting to POST data"""
+        return self.post(request)
+    
+    def get_endpoint_name(self):
+        return 'gwVisibility'
