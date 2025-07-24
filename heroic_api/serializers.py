@@ -435,7 +435,11 @@ class TelescopeDarkIntervalResponseSerializer(serializers.Serializer):
 
 
 class GWVisibilityQuerySerializer(serializers.Serializer):
-    """Serializer for GW network visibility queries"""
+    """Serializer for GW network visibility queries
+    
+    If telescopes are provided, only GW interferometers will be included in the calculation.
+    Non-interferometer telescopes are automatically filtered out rather than causing an error.
+    """
     telescopes = serializers.SlugRelatedField(
         slug_field='id', queryset=Telescope.objects.all(), many=True, required=False, allow_null=True
     )
@@ -464,12 +468,18 @@ class GWVisibilityQuerySerializer(serializers.Serializer):
                 )
             data['telescopes'] = list(gw_telescopes)
         else:
-            # Validate that all selected telescopes are GW interferometers
+            # Filter out non-GW interferometers from the telescope list
+            gw_telescopes = []
             for telescope in data['telescopes']:
-                if not telescope.instruments.filter(name__icontains='Interferometer').exists():
-                    raise serializers.ValidationError(
-                        {'telescopes': _(f'{telescope.id} is not a GW interferometer')}
-                    )
+                if telescope.instruments.filter(name__icontains='Interferometer').exists():
+                    gw_telescopes.append(telescope)
+            
+            if not gw_telescopes:
+                raise serializers.ValidationError(
+                    {'telescopes': _('None of the selected telescopes are GW interferometers')}
+                )
+            
+            data['telescopes'] = gw_telescopes
         
         return data
 
