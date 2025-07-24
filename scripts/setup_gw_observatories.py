@@ -148,16 +148,14 @@ def setup_observatories():
     success, _ = make_api_call("POST", "instruments/", {
         "id": "ligo.hanford.h1.interferometer",
         "name": "H1 GW Interferometer",
-        "telescope": "ligo.hanford.h1",
-        "instrument_type": "INTERFEROMETER"
+        "telescope": "ligo.hanford.h1"
     }, "Creating H1 interferometer instrument", headers)
     if success: stats['instruments'] += 1
     
     success, _ = make_api_call("POST", "instruments/", {
         "id": "ligo.livingston.l1.interferometer",
         "name": "L1 GW Interferometer",
-        "telescope": "ligo.livingston.l1",
-        "instrument_type": "INTERFEROMETER"
+        "telescope": "ligo.livingston.l1"
     }, "Creating L1 interferometer instrument", headers)
     if success: stats['instruments'] += 1
     
@@ -196,8 +194,7 @@ def setup_observatories():
     success, _ = make_api_call("POST", "instruments/", {
         "id": "virgo.cascina.v1.interferometer",
         "name": "V1 GW Interferometer",
-        "telescope": "virgo.cascina.v1",
-        "instrument_type": "INTERFEROMETER"
+        "telescope": "virgo.cascina.v1"
     }, "Creating V1 interferometer instrument", headers)
     if success: stats['instruments'] += 1
     
@@ -236,8 +233,7 @@ def setup_observatories():
     success, _ = make_api_call("POST", "instruments/", {
         "id": "kagra.kamioka.k1.interferometer",
         "name": "K1 GW Interferometer",
-        "telescope": "kagra.kamioka.k1",
-        "instrument_type": "INTERFEROMETER"
+        "telescope": "kagra.kamioka.k1"
     }, "Creating K1 interferometer instrument", headers)
     if success: stats['instruments'] += 1
     
