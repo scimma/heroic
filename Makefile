@@ -38,9 +38,12 @@ help:
 	@echo ""
 	@echo "$(GREEN)Test Data Management:$(NC)"
 	@echo "  make gw-setup         - Setup LIGO, Virgo, KAGRA observatories"
+	@echo "  make lco-ingest       - Ingest LCO telescopes from configdb.json"
+	@echo "  make lco-status       - Generate LCO telescope status history (requires LCO data)"
 	@echo "  make reset-db         - Reset database (remove all entries)"
 	@echo "  make reset-force      - Reset database without confirmation"
 	@echo "  make fresh-gw         - Reset database and setup GW observatories"
+	@echo "  make fresh-test       - Reset DB, setup GW, ingest LCO, generate LCO status"
 	@echo "  make test-gw-vis      - Test GW visibility API endpoint"
 	@echo ""
 	@echo "$(GREEN)Database Commands:$(NC)"
@@ -158,10 +161,44 @@ reset-force:
 fresh-gw: reset-force gw-setup
 	@echo "$(GREEN)Fresh GW setup complete!$(NC)"
 
+.PHONY: fresh-test
+fresh-test: reset-force gw-setup lco-ingest lco-status
+	@echo "$(GREEN)Fresh test environment setup complete!$(NC)"
+	@echo "$(BLUE)Summary:$(NC)"
+	@echo "  - Database reset ✓"
+	@echo "  - GW observatories (LIGO, Virgo, KAGRA) created ✓"
+	@echo "  - LCO telescopes ingested from configdb.json ✓"
+	@echo "  - 7 days of LCO telescope status history generated ✓"
+	@echo ""
+	@echo "$(GREEN)Test data is ready for use!$(NC)"
+
 .PHONY: test-gw-vis
 test-gw-vis:
 	@echo "$(BLUE)Testing GW visibility API...$(NC)"
 	$(PYTHON) scripts_extra/test_gw_visibility.py
+
+.PHONY: lco-ingest
+lco-ingest:
+	@echo "$(BLUE)Ingesting LCO telescope data from configdb.json...$(NC)"
+	@if [ ! -f token ]; then \
+		echo "$(RED)Error: token file not found. Run 'make superuser' first.$(NC)"; \
+		exit 1; \
+	fi
+	@if [ ! -f configdb.json ]; then \
+		echo "$(RED)Error: configdb.json not found.$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)Note: This will create the LCO observatory and all telescopes from configdb.json$(NC)"
+	@sed "s/YOUR_TOKEN_HERE/$$(cat token)/" ingest_configdb.py | $(PYTHON)
+
+.PHONY: lco-status
+lco-status:
+	@echo "$(BLUE)Generating LCO telescope status history...$(NC)"
+	@if [ ! -f token ]; then \
+		echo "$(RED)Error: token file not found. Run 'make superuser' first.$(NC)"; \
+		exit 1; \
+	fi
+	$(PYTHON) scripts/setup_lco_telescope_status.py
 
 # Database commands
 .PHONY: db-logs
