@@ -7,6 +7,7 @@ from math import sin, cos, sqrt, pi, atan2
 from typing import Dict, List, Tuple
 from datetime import datetime, timedelta
 from pyslalib import slalib
+from rise_set.astrometry import gregorian_to_ut_mjd, ut_mjd_to_gmst
 
 
 def get_detector_arm_directions(detector_id: str) -> Dict[str, Tuple[float, float, float]]:
@@ -72,28 +73,12 @@ def calculate_gmst(utc_time: datetime) -> float:
     """
     Calculate Greenwich Mean Sidereal Time (GMST) in radians
     
-    Uses the IAU 1982 expression via pyslalib for consistency with
+    Uses rise_set.astrometry functions for consistency with
     other astronomical calculations in HEROIC.
     """
-    # Convert datetime to calendar components
-    year = utc_time.year
-    month = utc_time.month
-    day = utc_time.day
-    
-    # Convert to Modified Julian Date (MJD)
-    mjd, status = slalib.sla_caldj(year, month, day)
-    
-    if status != 0:
-        raise ValueError(f"Invalid date: {utc_time}")
-    
-    # Calculate fraction of day
-    ut_fraction = (utc_time.hour + utc_time.minute / 60.0 + 
-                   utc_time.second / 3600.0 + utc_time.microsecond / 3.6e9) / 24.0
-    
-    # Get GMST using the high-precision function
-    gmst = slalib.sla_gmsta(mjd, ut_fraction)
-    
-    return gmst
+    gmst_angle = ut_mjd_to_gmst(gregorian_to_ut_mjd(utc_time))
+    # Convert Angle object to radians
+    return gmst_angle.in_radians()
 
 
 def detector_response_tensor(detector_params: Dict) -> np.ndarray:
