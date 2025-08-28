@@ -432,3 +432,75 @@ class TargetVisibilityAirmassResponseSerializer(serializers.Serializer):
 class TelescopeDarkIntervalResponseSerializer(serializers.Serializer):
     telescope_id = serializers.ListField(child=serializers.ListField(
         child=serializers.DateTimeField(), min_length=2, max_length=2), allow_empty=True)
+
+
+class GWVisibilityQuerySerializer(serializers.Serializer):
+    """Serializer for GW network visibility queries
+    
+    If telescopes are provided, only GW interferometers will be included in the calculation.
+    Non-interferometer telescopes are automatically filtered out rather than causing an error.
+    """
+    telescopes = serializers.SlugRelatedField(
+        slug_field='id', queryset=Telescope.objects.all(), many=True, required=False, allow_null=True
+    )
+    start = serializers.DateTimeField(required=True)
+    end = serializers.DateTimeField(required=True)
+    ra = serializers.FloatField(required=True, min_value=0, max_value=360)
+    dec = serializers.FloatField(required=True, min_value=-90, max_value=90)
+    time_resolution_minutes = serializers.IntegerField(required=False, default=15, min_value=1, max_value=60)
+    
+    def validate(self, data):
+        # Validate start is < end time
+        if data['start'] >= data['end']:
+            raise serializers.ValidationError(
+                {'end': _('The end datetime must be greater than the start datetime')}
+            )
+        
+        # If no specific telescopes were chosen, get all GW interferometers
+        if not data.get('telescopes'):
+            # Get all telescopes that have instruments with "Interferometer" in the name
+            gw_telescopes = Telescope.objects.filter(
+                instruments__name__icontains='Interferometer'
+            ).distinct()
+            if not gw_telescopes.exists():
+                raise serializers.ValidationError(
+                    {'telescopes': _('No GW interferometers found in the system')}
+                )
+            data['telescopes'] = list(gw_telescopes)
+        else:
+            # Filter out non-GW interferometers from the telescope list
+            gw_telescopes = []
+            for telescope in data['telescopes']:
+                if telescope.instruments.filter(name__icontains='Interferometer').exists():
+                    gw_telescopes.append(telescope)
+            
+            if not gw_telescopes:
+                raise serializers.ValidationError(
+                    {'telescopes': _('None of the selected telescopes are GW interferometers')}
+                )
+            
+            data['telescopes'] = gw_telescopes
+        
+        return data
+
+
+class GWDetectorInfoSerializer(serializers.Serializer):
+    """Serializer for individual detector info in GW visibility response"""
+    sensitivity = serializers.CharField()
+    f_plus = serializers.FloatField()
+    f_cross = serializers.FloatField()
+
+
+class GWVisibilityTimePointSerializer(serializers.Serializer):
+    """Serializer for a single time point in GW visibility response"""
+    time = serializers.DateTimeField()
+    max_distance_snr10_mpc = serializers.FloatField()
+    active_detectors = serializers.ListField(child=serializers.CharField())
+    network_count = serializers.IntegerField()
+    detector_details = serializers.DictField(child=GWDetectorInfoSerializer())
+
+
+class GWVisibilityResponseSerializer(serializers.Serializer):
+    """Serializer for GW visibility response"""
+    query_info = serializers.DictField()
+    timeline = serializers.ListField(child=GWVisibilityTimePointSerializer())
