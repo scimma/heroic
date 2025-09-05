@@ -4,7 +4,8 @@ from drf_spectacular.utils import extend_schema_serializer, OpenApiExample
 from rest_framework import serializers
 from heroic_api.visibility import telescope_dark_intervals
 from heroic_api.models import (Observatory, Site, Telescope, Instrument, TelescopeStatus, TelescopePointing,
-                               InstrumentCapability, Profile, TargetTypes)
+                               InstrumentCapability, Profile, TargetTypes, PlannedTelescopeStatus,
+                               PlannedInstrumentCapability)
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -22,6 +23,32 @@ class TelescopeStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = TelescopeStatus
         fields = '__all__'
+
+    def validate_date(self, value):
+        if value > timezone.now():
+            raise serializers.ValidationError(_('Date cannot be in the future. If you want the current date you can leave this blank.'))
+        return value
+
+
+class PlannedTelescopeStatusSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = PlannedTelescopeStatus
+        fields = '__all__'
+
+    def validate_start(self, value):
+        if value < timezone.now():
+            raise serializers.ValidationError(_('Start value cannot be in the past'))
+        return value
+
+    def validate(self, data):
+        validated_data = super().validate(data)
+        if validated_data['end'] < validated_data['start']:
+            raise serializers.ValidationError(
+                {'end': _('The end datetime must be greater than or equal to the start datetime')}
+            )
+        return validated_data
+
 
 @extend_schema_serializer(
     examples = [
@@ -48,6 +75,11 @@ class TelescopePointingSerializer(serializers.ModelSerializer):
     class Meta:
         model = TelescopePointing
         exclude = ['coordinate']
+
+    def validate_date(self, value):
+        if value > timezone.now():
+            raise serializers.ValidationError(_('Date cannot be in the future. If you want the current date you can leave this blank.'))
+        return value
 
     def validate(self, data):
         validated_data = super().validate(data)
@@ -78,6 +110,31 @@ class InstrumentCapabilitySerializer(serializers.ModelSerializer):
     class Meta:
         model = InstrumentCapability
         fields = '__all__'
+
+    def validate_date(self, value):
+        if value > timezone.now():
+            raise serializers.ValidationError(_('Date cannot be in the future. If you want the current date you can leave this blank.'))
+        return value
+
+
+class PlannedInstrumentCapabilitySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = PlannedInstrumentCapability
+        fields = '__all__'
+
+    def validate_start(self, value):
+        if value < timezone.now():
+            raise serializers.ValidationError(_('Start value cannot be in the past'))
+        return value
+
+    def validate(self, data):
+        validated_data = super().validate(data)
+        if validated_data['end'] < validated_data['start']:
+            raise serializers.ValidationError(
+                {'end': _('The end datetime must be greater than or equal to the start datetime')}
+            )
+        return validated_data
 
 
 class InstrumentSerializer(serializers.ModelSerializer):

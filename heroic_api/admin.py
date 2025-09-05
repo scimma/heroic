@@ -51,10 +51,20 @@ class PrettyJSONEncoder(json.JSONEncoder):
 
 
 class InstrumentCapabilityAdmin(admin.ModelAdmin):
+    date_hierarchy = 'date'
     optical_element_groups = forms.JSONField(encoder=PrettyJSONEncoder)
     operation_modes = forms.JSONField(encoder=PrettyJSONEncoder)
     list_display = ('date', 'instrument', 'status')
-    list_filter = ('status', 'instrument__name', 'instrument__telescope__name')
+    list_filter = ('status', 'instrument__name', 'instrument__telescope__id')
+    search_fields = ('instrument__name', 'instrument__id')
+
+
+class PlannedInstrumentCapabilityAdmin(admin.ModelAdmin):
+    date_hierarchy = 'start'
+    optical_element_groups = forms.JSONField(encoder=PrettyJSONEncoder)
+    operation_modes = forms.JSONField(encoder=PrettyJSONEncoder)
+    list_display = ('start', 'end', 'instrument', 'status')
+    list_filter = ('status', 'instrument__name', 'instrument__telescope__id')
     search_fields = ('instrument__name', 'instrument__id')
 
 
@@ -83,9 +93,10 @@ class LatestInstrumentCapabilityInline(LatestInline):
 
 
 class TelescopeStatusAdmin(admin.ModelAdmin):
+    date_hierarchy = 'date'
     extra = forms.JSONField(encoder=PrettyJSONEncoder)
-    list_display = ('date', 'telescope', 'status', 'reason')
-    list_filter = ('status', 'telescope__name', 'telescope__site__name', 'telescope__site__observatory__name')
+    list_display = ('date', 'telescope__id', 'status', 'reason')
+    list_filter = ('status', 'telescope__id', 'telescope__site__name', 'telescope__site__observatory__name')
     search_fields = ('telescope__name', 'telescope__id', 'target')
 
 
@@ -95,9 +106,10 @@ class LatestTelescopeStatusInline(LatestInline):
 
 
 class TelescopePointingAdmin(admin.ModelAdmin):
+    date_hierarchy = 'date'
     extra = forms.JSONField(encoder=PrettyJSONEncoder)
-    list_display = ('date', 'telescope', 'instrument', 'target')
-    list_filter = ('telescope__name', 'telescope__site__name', 'telescope__site__observatory__name', 'instrument__name')
+    list_display = ('date', 'telescope__id', 'instrument', 'target')
+    list_filter = ('telescope__id', 'telescope__site__name', 'telescope__site__observatory__name', 'instrument__name')
     search_fields = ('telescope__name', 'telescope__id', 'target', 'instrument__name')
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         if isinstance(db_field, PointField):
@@ -105,10 +117,18 @@ class TelescopePointingAdmin(admin.ModelAdmin):
         return super().formfield_for_dbfield(db_field, request, **kwargs)
 
 
+class PlannedTelescopeStatusAdmin(admin.ModelAdmin):
+    date_hierarchy = 'start'
+    extra = forms.JSONField(encoder=PrettyJSONEncoder)
+    list_display = ('start', 'end', 'telescope__id', 'status', 'reason')
+    list_filter = ('status', 'telescope__id', 'telescope__site__name', 'telescope__site__observatory__name')
+    search_fields = ('telescope__name', 'telescope__id', 'target')
+
+
 class InstrumentAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'available', 'telescope')
-    list_filter = ('available', 'telescope__name', 'telescope__site__name', 'telescope__site__observatory__name')
-    search_fields = ('id', 'name', 'telescope__name', 'telescope__site__name', 'telescope__site__observatory__name')
+    list_display = ('id', 'name', 'available', 'telescope__id')
+    list_filter = ('available', 'telescope__id', 'telescope__site__name', 'telescope__site__observatory__name')
+    search_fields = ('id', 'name', 'telescope__id', 'telescope__site__name', 'telescope__site__observatory__name')
     inlines = (LatestInstrumentCapabilityInline,)
 
 class TelescopeAdmin(admin.ModelAdmin):
@@ -181,7 +201,9 @@ class ProfileAdmin(admin.ModelAdmin):
 admin.site.register(models.UserProxy, UserProxyAdmin)
 admin.site.register(models.Profile, ProfileAdmin)
 admin.site.register(models.InstrumentCapability, InstrumentCapabilityAdmin)
+admin.site.register(models.PlannedInstrumentCapability, PlannedInstrumentCapabilityAdmin)
 admin.site.register(models.TelescopeStatus, TelescopeStatusAdmin)
+admin.site.register(models.PlannedTelescopeStatus, PlannedTelescopeStatusAdmin)
 admin.site.register(models.TelescopePointing, TelescopePointingAdmin)
 admin.site.register(models.Instrument, InstrumentAdmin)
 admin.site.register(models.Telescope, TelescopeAdmin)

@@ -5,7 +5,8 @@ from django.contrib.gis.measure import D
 from datetime import timezone
 from dateutil.parser import parse
 
-from heroic_api.models import Telescope, TelescopeStatus, Instrument, InstrumentCapability, TelescopePointing
+from heroic_api.models import (Telescope, TelescopeStatus, Instrument, InstrumentCapability, TelescopePointing,
+                               PlannedTelescopeStatus, PlannedInstrumentCapability)
 
 import math
 import logging
@@ -34,12 +35,31 @@ class InstrumentFilter(django_filters.FilterSet):
         exclude = ['instrument_url']
 
 
-class TelescopeStatusFilter(django_filters.FilterSet):
+class BaseTelescopeStatusFilter(django_filters.FilterSet):
     site = django_filters.CharFilter(field_name='telescope__site__id')
     observatory = django_filters.CharFilter(field_name='telescope__site__observatory__id')
     telescope = django_filters.CharFilter(field_name='telescope__id')
     status = django_filters.MultipleChoiceFilter(choices=TelescopeStatus.StatusChoices, field_name='status')
     reason = django_filters.CharFilter(field_name='reason', lookup_expr='contains', label='Reason contains')
+    created_after = django_filters.IsoDateTimeFilter(
+        field_name='created',
+        lookup_expr='gte',
+        label='Created After (Inclusive)',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    created_before = django_filters.IsoDateTimeFilter(
+        field_name='created',
+        lookup_expr='lt',
+        label='Created Before',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    class Meta:
+        model = TelescopeStatus
+        exclude = ['extra', 'date', 'created']
+
+
+
+class TelescopeStatusFilter(BaseTelescopeStatusFilter):
     start = django_filters.CharFilter(
         method='start_filter',
         label='Date After (Inclusive)',
@@ -64,9 +84,41 @@ class TelescopeStatusFilter(django_filters.FilterSet):
         else:
             return dates_after
 
+
+class PlannedTelescopeStatusFilter(BaseTelescopeStatusFilter):
+    start_after = django_filters.IsoDateTimeFilter(
+        field_name='start',
+        lookup_expr='gte',
+        label='Start After (Inclusive)',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    start_before = django_filters.IsoDateTimeFilter(
+        field_name='start',
+        lookup_expr='lt',
+        label='Start Before',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    end_after = django_filters.IsoDateTimeFilter(
+        field_name='end',
+        lookup_expr='gte',
+        label='End After (Inclusive)',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    end_before = django_filters.IsoDateTimeFilter(
+        field_name='end',
+        lookup_expr='lt',
+        label='End Before',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    modified_after = django_filters.IsoDateTimeFilter(
+        field_name='modified',
+        lookup_expr='gte',
+        label='Modified After (Inclusive)',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
     class Meta:
-        model = TelescopeStatus
-        exclude = ['extra', 'instrument', 'ra', 'dec', 'target', 'date']
+        model = PlannedTelescopeStatus
+        exclude = ['extra', 'start', 'end', 'created', 'modified']
 
 
 class TelescopePointingFilter(django_filters.FilterSet):
@@ -123,7 +175,7 @@ class TelescopePointingFilter(django_filters.FilterSet):
         exclude = ['extra', 'coordinate', 'date']
 
 
-class InstrumentCapabilityFilter(django_filters.FilterSet):
+class BaseInstrumentCapabilityFilter(django_filters.FilterSet):
     site = django_filters.CharFilter(field_name='instrument__telescope__site__id')
     observatory = django_filters.CharFilter(field_name='instrument__telescope__site__observatory__id')
     telescope = django_filters.CharFilter(field_name='instrument__telescope__id')
@@ -131,6 +183,19 @@ class InstrumentCapabilityFilter(django_filters.FilterSet):
     status = django_filters.MultipleChoiceFilter(choices=InstrumentCapability.InstrumentStatus, field_name='status')
     optical_elements_contains = django_filters.CharFilter(method='optical_elements_contains_filter')
     operation_modes_contains = django_filters.CharFilter(method='operation_modes_contains_filter')
+
+    def optical_elements_contains_filter(self, queryset, name, value):
+        return queryset.filter(optical_element_groups__has_key=value)
+
+    def operation_modes_contains_filter(self, queryset, name, value):
+        return queryset.filter(operation_modes__has_key=value)
+
+    class Meta:
+        model = InstrumentCapability
+        exclude = ['operation_modes', 'optical_element_groups', 'date', 'created']
+
+
+class InstrumentCapabilityFilter(BaseInstrumentCapabilityFilter):
     start = django_filters.CharFilter(
         method='start_filter',
         label='Date After (Inclusive)',
@@ -155,12 +220,38 @@ class InstrumentCapabilityFilter(django_filters.FilterSet):
         else:
             return dates_after
 
-    def optical_elements_contains_filter(self, queryset, name, value):
-        return queryset.filter(optical_element_groups__has_key=value)
 
-    def operation_modes_contains_filter(self, queryset, name, value):
-        return queryset.filter(operation_modes__has_key=value)
-
+class PlannedInstrumentCapabilityFilter(BaseInstrumentCapabilityFilter):
+    start_after = django_filters.IsoDateTimeFilter(
+        field_name='start',
+        lookup_expr='gte',
+        label='Start After (Inclusive)',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    start_before = django_filters.IsoDateTimeFilter(
+        field_name='start',
+        lookup_expr='lt',
+        label='Start Before',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    end_after = django_filters.IsoDateTimeFilter(
+        field_name='end',
+        lookup_expr='gte',
+        label='End After (Inclusive)',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    end_before = django_filters.IsoDateTimeFilter(
+        field_name='end',
+        lookup_expr='lt',
+        label='End Before',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    modified_after = django_filters.IsoDateTimeFilter(
+        field_name='modified',
+        lookup_expr='gte',
+        label='Modified After (Inclusive)',
+        widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
     class Meta:
-        model = InstrumentCapability
-        exclude = ['operation_modes', 'optical_element_groups', 'date']
+        model = PlannedInstrumentCapability
+        exclude = ['operation_modes', 'optical_element_groups', 'start', 'end', 'created', 'modified']
