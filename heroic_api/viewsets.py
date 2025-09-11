@@ -7,13 +7,13 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from heroic_api.visibility import telescope_dark_intervals
 from heroic_api.filters import (TelescopeFilter, InstrumentFilter, TelescopeStatusFilter, InstrumentCapabilityFilter,
-                                TelescopePointingFilter)
+                                TelescopePointingFilter, PlannedTelescopeStatusFilter, PlannedInstrumentCapabilityFilter)
 from heroic_api.models import (Observatory, Site, Telescope, Instrument, TelescopeStatus, InstrumentCapability,
-                               TelescopePointing)
+                               TelescopePointing, PlannedTelescopeStatus, PlannedInstrumentCapability)
 from heroic_api.serializers import (
     ObservatorySerializer, SiteSerializer, TelescopeSerializer, TelescopeDarkIntervalsSerializer,
     InstrumentSerializer, TelescopeStatusSerializer, InstrumentCapabilitySerializer, TelescopePointingSerializer,
-    TelescopeDarkIntervalResponseSerializer
+    TelescopeDarkIntervalResponseSerializer, PlannedTelescopeStatusSerializer, PlannedInstrumentCapabilitySerializer
 )
 from heroic_api.permissions import IsObservatoryAdminOrReadOnly, IsAdminOrReadOnly
 
@@ -167,6 +167,27 @@ class TelescopeViewSet(viewsets.ModelViewSet):
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                response=PlannedTelescopeStatusSerializer(many=True)
+           )
+        },
+    )
+    @action(detail=True, methods=['get', 'post'], pagination_class=None)
+    def planned_status(self, request, pk=None):
+        if request.method == 'GET':
+            serializer = PlannedTelescopeStatusSerializer(self.get_object().planned_statuses.all(), many=True)
+            return Response(data=serializer.data, status=status.HTTP_200_OK)
+        elif request.method == 'POST':
+            data = request.data
+            data['telescope'] = pk
+            serializer = PlannedTelescopeStatusSerializer(data=data, many=isinstance(data, list))
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class InstrumentViewSet(viewsets.ModelViewSet):
     lookup_value_regex = '[^/]+'
@@ -198,12 +219,42 @@ class InstrumentViewSet(viewsets.ModelViewSet):
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                response=PlannedInstrumentCapabilitySerializer(many=True)
+           )
+        },
+    )
+    @action(detail=True, methods=['get', 'post'], pagination_class=None)
+    def planned_capabilities(self, request, pk=None):
+        if request.method == 'GET':
+            serializer = PlannedInstrumentCapabilitySerializer(self.get_object().planned_capabilities.all(), many=True)
+            return Response(data=serializer.data, status=status.HTTP_200_OK)
+        elif request.method == 'POST':
+            data = request.data
+            data['instrument'] = pk
+            serializer = PlannedInstrumentCapabilitySerializer(data=data, many=isinstance(data, list))
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class TelescopeStatusViewSet(viewsets.ModelViewSet):
     queryset = TelescopeStatus.objects.all()
     serializer_class = TelescopeStatusSerializer
     permission_classes = [IsObservatoryAdminOrReadOnly]
     filterset_class = TelescopeStatusFilter
+    filter_backends = (DjangoFilterBackend,)
+
+
+class PlannedTelescopeStatusViewSet(viewsets.ModelViewSet):
+    queryset = PlannedTelescopeStatus.objects.all()
+    serializer_class = PlannedTelescopeStatusSerializer
+    permission_classes = [IsObservatoryAdminOrReadOnly]
+    filterset_class = PlannedTelescopeStatusFilter
     filter_backends = (DjangoFilterBackend,)
 
 
@@ -220,4 +271,12 @@ class InstrumentCapabilityViewSet(viewsets.ModelViewSet):
     serializer_class = InstrumentCapabilitySerializer
     permission_classes = [IsObservatoryAdminOrReadOnly]
     filterset_class = InstrumentCapabilityFilter
+    filter_backends = (DjangoFilterBackend,)
+
+
+class PlannedInstrumentCapabilityViewSet(viewsets.ModelViewSet):
+    queryset = PlannedInstrumentCapability.objects.all()
+    serializer_class = PlannedInstrumentCapabilitySerializer
+    permission_classes = [IsObservatoryAdminOrReadOnly]
+    filterset_class = PlannedInstrumentCapabilityFilter
     filter_backends = (DjangoFilterBackend,)

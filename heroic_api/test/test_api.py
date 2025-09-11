@@ -3,6 +3,7 @@ from mixer.backend.django import mixer
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils import timezone
+from datetime import timedelta
 
 from heroic_api import models
 
@@ -178,6 +179,13 @@ class TestTelescopePointing(APITestCase):
         self.assertEqual(response.json()['target'], self.test_pointing['target'])
         self.assertEqual(response.json()['instrument'], self.test_pointing['instrument'])
 
+    def test_create_telescope_pointing_in_past(self):
+        pointing = self.test_pointing.copy()
+        pointing['date'] = (timezone.now() - timedelta(days=1)).isoformat()
+        response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['date'], pointing['date'].replace('+00:00', 'Z'))
+
     def test_create_telescope_pointing_fails_if_not_admin_user(self):
         basic_user = mixer.blend(User, is_superuser=False)
         self.client.force_login(basic_user)
@@ -203,6 +211,12 @@ class TestTelescopePointing(APITestCase):
         pointing['telescope'] = telescope_id
         response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
         self.assertContains(response, f'Invalid pk \\"{telescope_id}\\"', status_code=400)
+
+    def test_create_telescope_status_fails_if_date_in_future(self):
+        pointing = self.test_pointing.copy()
+        pointing['date'] = (timezone.now() + timedelta(days=1)).isoformat()
+        response = self.client.post(reverse('api:telescopepointing-list'), data=pointing, format='json')
+        self.assertContains(response, 'Date cannot be in the future', status_code=400)
 
     def test_create_telescope_pointing_fails_if_ra_out_of_range(self):
         pointing = self.test_pointing.copy()
@@ -244,12 +258,6 @@ class TestTelescopeStatus(APITestCase):
         self.assertEqual(response.json()['status'], status['status'])
         if 'extra' in status:
             self.assertEqual(response.json()['extra'], status['extra'])
-        if 'target' in status:
-            self.assertEqual(response.json()['target'], status['target'])
-        if 'ra' in status:
-            self.assertEqual(response.json()['ra'], status['ra'])
-        if 'instrument' in status:
-            self.assertEqual(response.json()['instrument'], status['instrument'])
 
     def test_create_telescope_status(self):
         # Get the telescope and see that the base status is blended in
@@ -272,6 +280,16 @@ class TestTelescopeStatus(APITestCase):
         self.assertEqual(response.json()['reason'], status['reason'])
         self.assertEqual(response.json()['extra'], status['extra'])
 
+    def test_create_telescope_status_in_past(self):
+        # Now set a status on the telescope in the past
+        status = {'telescope': self.telescope.id,
+                  'status': models.TelescopeStatus.StatusChoices.UNAVAILABLE,
+                  'date': (timezone.now() - timedelta(days=30)).isoformat(),
+                  'reason': 'Engineering Night',
+                  'extra': {'start': '2024-01-11T03:32:22Z', 'end': '2024-01-12T00:00:00Z'}
+                  }
+        self._create_telescope_status(status)
+
     def test_create_telescope_status_fails_if_not_admin_user(self):
         basic_user = mixer.blend(User, is_superuser=False)
         self.client.force_login(basic_user)
@@ -282,6 +300,16 @@ class TestTelescopeStatus(APITestCase):
                   }
         response = self.client.post(reverse('api:telescopestatus-list'), data=status, format='json')
         self.assertContains(response, 'You do not have permission', status_code=403)
+
+    def test_create_telescope_status_fails_if_date_in_future(self):
+        status = {'telescope': self.telescope.id,
+                  'status': models.TelescopeStatus.StatusChoices.UNAVAILABLE,
+                  'date': (timezone.now() + timedelta(days=1)).isoformat(),
+                  'reason': 'Engineering Night',
+                  'extra': {'start': '2024-01-11T03:32:22Z', 'end': '2024-01-12T00:00:00Z'}
+                  }
+        response = self.client.post(reverse('api:telescopestatus-list'), data=status, format='json')
+        self.assertContains(response, 'Date cannot be in the future', status_code=400)
 
     def test_fails_to_create_telescope_status_from_telescope_endpoint(self):
         # Set telescope status without telescope id, that is part of the endpoint instead
@@ -332,6 +360,163 @@ class TestTelescopeStatus(APITestCase):
         self.assertEqual(first_status['reason'], self.telescope_status.reason)
 
 
+class TestPlannedTelescopeStatus(APITestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(self.user)
+        self.observatory = mixer.blend(models.Observatory, admin=self.user)
+        self.site = mixer.blend(models.Site, observatory=self.observatory)
+        self.telescope = mixer.blend(models.Telescope, site=self.site)
+        self.instrument = mixer.blend(models.Instrument, telescope=self.telescope)
+        self.telescope_status = mixer.blend(models.TelescopeStatus, telescope=self.telescope, date=timezone.now(),
+                                            reason='Initial', extra={'key': 'test'},
+                                            status=models.PlannedTelescopeStatus.StatusChoices.SCHEDULABLE)
+        self.planned_telescope_status = mixer.blend(models.PlannedTelescopeStatus, telescope=self.telescope,
+                                                    status=models.PlannedTelescopeStatus.StatusChoices.UNAVAILABLE,
+                                                    start=timezone.now() + timedelta(days=30),
+                                                    end=timezone.now() + timedelta(days=37),
+                                                    reason='Engineering', extra={'key': 'test'})
+
+    def _create_planned_telescope_status(self, status):
+        response = self.client.post(reverse('api:plannedtelescopestatus-list'), data=status, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['telescope'], status['telescope'])
+        self.assertEqual(response.json()['status'], status['status'])
+        self.assertEqual(response.json()['start'], status['start'].replace("+00:00", "Z"))
+        self.assertEqual(response.json()['end'], status['end'].replace("+00:00", "Z"))
+        if 'extra' in status:
+            self.assertEqual(response.json()['extra'], status['extra'])
+
+
+    def test_create_planned_telescope_status(self):
+        # Set a new planned status on the telescope
+        status = {'telescope': self.telescope.id,
+                  'status': models.PlannedTelescopeStatus.StatusChoices.AVAILABLE,
+                  'reason': 'Engineering Night',
+                  'start': (timezone.now() + timedelta(days=4)).isoformat(),
+                  'end': (timezone.now() + timedelta(days=5)).isoformat()
+                  }
+        self._create_planned_telescope_status(status)
+        # Now get the telescope planned status from the telescope endpoint
+        response = self.client.get(reverse('api:telescope-planned-status', args=(self.telescope.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 2)
+        self.assertEqual(response.json()[0]['status'], status['status'])
+        self.assertEqual(response.json()[0]['reason'], status['reason'])
+        self.assertEqual(response.json()[0]['extra'], {})
+
+    def test_create_planned_telescope_status_fails_if_not_admin_user(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        status = {'telescope': self.telescope.id,
+                  'status': models.PlannedTelescopeStatus.StatusChoices.UNAVAILABLE,
+                  'reason': 'Engineering Night',
+                  'start': (timezone.now() + timedelta(days=4)).isoformat(),
+                  'end': (timezone.now() + timedelta(days=5)).isoformat()
+                  }
+        response = self.client.post(reverse('api:plannedtelescopestatus-list'), data=status, format='json')
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
+    def test_create_planned_telescope_status_from_telescope_endpoint(self):
+        # Set planned telescope status without telescope id, that is part of the endpoint instead
+        status = {'status': models.PlannedTelescopeStatus.StatusChoices.UNAVAILABLE,
+                  'reason': 'Engineering Night',
+                  'start': (timezone.now() + timedelta(days=4)).isoformat(),
+                  'end': (timezone.now() + timedelta(days=5)).isoformat()
+                  }
+        response = self.client.post(reverse('api:telescope-planned-status', args=(self.telescope.id,)), data=status, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['telescope'], self.telescope.id)
+        self.assertEqual(response.json()['status'], status['status'])
+        self.assertEqual(response.json()['reason'], status['reason'])
+        self.assertEqual(response.json()['extra'], {})
+
+    def test_create_planned_telescope_status_from_telescope_endpoint_fails_if_not_admin_user(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        status = {'status': models.PlannedTelescopeStatus.StatusChoices.UNAVAILABLE,
+                  'reason': 'Engineering Night',
+                  'start': (timezone.now() + timedelta(days=4)).isoformat(),
+                  'end': (timezone.now() + timedelta(days=5)).isoformat()
+                  }
+        response = self.client.post(reverse('api:telescope-planned-status', args=(self.telescope.id,)), data=status, format='json')
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
+    def test_create_planned_telescope_status_fails_if_end_before_start(self):
+        status = {'telescope': self.telescope.id,
+                  'status': models.PlannedTelescopeStatus.StatusChoices.UNAVAILABLE,
+                  'reason': 'Engineering Night',
+                  'end': (timezone.now() + timedelta(days=4)).isoformat(),
+                  'start': (timezone.now() + timedelta(days=5)).isoformat()
+                  }
+        response = self.client.post(reverse('api:plannedtelescopestatus-list'), data=status, format='json')
+        self.assertContains(response, 'The end datetime must be greater than or equal to the start datetime', status_code=400)
+
+    def test_getting_all_planned_telescope_statuses_for_telescope(self):
+        self.client.logout()
+        # Add a second planned telescope status
+        second_status = mixer.blend(models.PlannedTelescopeStatus, telescope=self.telescope, start=(timezone.now() + timedelta(days=4)),
+                                    end=(timezone.now() + timedelta(days=5)),
+                                    reason='Second', status=models.TelescopeStatus.StatusChoices.UNAVAILABLE)
+        # Test that two planned telescope statuses are received in ascending start date order
+        response = self.client.get(reverse('api:telescope-planned-status', args=(self.telescope.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 2)
+        latest_status = response.json()[0]
+        self.assertEqual(latest_status['status'], second_status.status)
+        self.assertEqual(latest_status['reason'], second_status.reason)
+        self.assertEqual(latest_status['start'], second_status.start.isoformat().replace("+00:00", "Z"))
+        first_status = response.json()[1]
+        self.assertEqual(first_status['status'], self.planned_telescope_status.status)
+        self.assertEqual(first_status['reason'], self.planned_telescope_status.reason)
+        self.assertEqual(first_status['start'],  self.planned_telescope_status.start.isoformat().replace("+00:00", "Z"))
+
+    def test_delete_planned_telescope_status(self):
+        status_id = self.planned_telescope_status.id
+        response = self.client.delete(reverse('api:plannedtelescopestatus-detail', args=(status_id,)))
+        self.assertEqual(response.status_code, 204)
+        # Now check that that planned telescope status no longer exists
+        response = self.client.get(reverse('api:telescope-planned-status', args=(self.telescope.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 0)
+
+    def test_delete_planned_telescope_status_fails_if_not_admin_user(self):
+        status_id = self.planned_telescope_status.id
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        response = self.client.delete(reverse('api:plannedtelescopestatus-detail', args=(status_id,)))
+        self.assertContains(response, 'You do not have permission', status_code=403)
+        # Now check that that planned telescope status still exists
+        response = self.client.get(reverse('api:telescope-planned-status', args=(self.telescope.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+
+    def test_update_planned_telescope_status_fields(self):
+        status_id = self.planned_telescope_status.id
+        old_start = self.planned_telescope_status.start
+        # Check that that planned telescope status start time is the old_start
+        response = self.client.get(reverse('api:telescope-planned-status', args=(self.telescope.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]['start'], old_start.isoformat().replace("+00:00", "Z"))
+        # Now patch update to a new start time
+        new_start = old_start - timedelta(days=20)
+        new_end = new_start + timedelta(days=7)
+        update = {
+            'start': new_start.isoformat(),
+            'end': new_end.isoformat()
+        }
+        response = self.client.patch(reverse('api:plannedtelescopestatus-detail', args=(status_id,)), data=update, format='json')
+        self.assertEqual(response.status_code, 200)
+        # Now check that that planned telescope status exists and its start time is the new_start
+        response = self.client.get(reverse('api:telescope-planned-status', args=(self.telescope.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]['start'], new_start.isoformat().replace("+00:00", "Z"))
+        self.assertEqual(response.json()[0]['end'], new_end.isoformat().replace("+00:00", "Z"))
+
+
 class TestInstrumentCapability(APITestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -375,6 +560,14 @@ class TestInstrumentCapability(APITestCase):
         self.assertEqual(response.json()['optical_element_groups'], {})
         self.assertEqual(response.json()['operation_modes'], {})
 
+    def test_create_instrument_capability_in_past(self):
+        # Now set a capability on the instrument in the past
+        status = {'instrument': self.instrument.id,
+                  'status': models.InstrumentCapability.InstrumentStatus.UNAVAILABLE,
+                  'date': (timezone.now() - timedelta(days=1)).isoformat()
+                 }
+        self._create_instrument_capability(status)
+
     def test_create_instrument_capability_fails_if_not_admin_user(self):
         basic_user = mixer.blend(User, is_superuser=False)
         self.client.force_login(basic_user)
@@ -383,6 +576,14 @@ class TestInstrumentCapability(APITestCase):
                  }
         response = self.client.post(reverse('api:instrumentcapability-list'), data=status, format='json')
         self.assertContains(response, 'You do not have permission', status_code=403)
+
+    def test_create_instrument_capability_fails_if_in_future(self):
+        status = {'instrument': self.instrument.id,
+                  'status': models.InstrumentCapability.InstrumentStatus.UNAVAILABLE,
+                  'date': (timezone.now() + timedelta(days=1)).isoformat()
+                 }
+        response = self.client.post(reverse('api:instrumentcapability-list'), data=status, format='json')
+        self.assertContains(response, 'Date cannot be in the future', status_code=400)
 
     def test_fails_to_create_instrument_capability_from_instrument_endpoint_bad_status(self):
         # Bad status should fail
@@ -426,3 +627,163 @@ class TestInstrumentCapability(APITestCase):
         self.assertEqual(first_capability['status'], self.instrument_capability.status)
         self.assertEqual(first_capability['optical_element_groups'], self.instrument_capability.optical_element_groups)
         self.assertEqual(first_capability['operation_modes'], self.instrument_capability.operation_modes)
+
+
+class TestPlannedInstrumentCapability(APITestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(self.user)
+        self.observatory = mixer.blend(models.Observatory, admin=self.user)
+        self.site = mixer.blend(models.Site, observatory=self.observatory)
+        self.telescope = mixer.blend(models.Telescope, site=self.site)
+        self.instrument = mixer.blend(models.Instrument, telescope=self.telescope)
+        self.instrument_capability = mixer.blend(models.InstrumentCapability, instrument=self.instrument,
+                                                 date=timezone.now(),
+                                                 status=models.InstrumentCapability.InstrumentStatus.AVAILABLE,
+                                                 optical_element_groups={'filters': {}},
+                                                 operation_modes={'readout': {}}
+                                                )
+        self.planned_instrument_capability = mixer.blend(
+            models.PlannedInstrumentCapability, instrument=self.instrument,
+            status=models.PlannedInstrumentCapability.InstrumentStatus.UNAVAILABLE,
+            start=timezone.now() + timedelta(days=30),
+            end=timezone.now() + timedelta(days=37),
+            optical_element_groups={'filters': {}}, operation_modes={'readout': {}}
+        )
+
+    def _create_planned_instrument_capability(self, capability):
+        response = self.client.post(reverse('api:plannedinstrumentcapability-list'), data=capability, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['instrument'], capability['instrument'])
+        self.assertEqual(response.json()['status'], capability['status'])
+        self.assertEqual(response.json()['optical_element_groups'], capability.get('optical_element_groups', {}))
+        self.assertEqual(response.json()['operation_modes'], capability.get('operation_modes', {}))
+        self.assertEqual(response.json()['start'], capability['start'].replace("+00:00", "Z"))
+        self.assertEqual(response.json()['end'], capability['end'].replace("+00:00", "Z"))
+
+    def test_create_planned_instrument_capability(self):
+        # Now set a new capability on the instrument
+        capability = {'instrument': self.instrument.id,
+                      'status': models.PlannedInstrumentCapability.InstrumentStatus.UNAVAILABLE,
+                      'start': (timezone.now() + timedelta(days=4)).isoformat(),
+                      'end': (timezone.now() + timedelta(days=5)).isoformat()
+                     }
+        self._create_planned_instrument_capability(capability)
+        # Now get the planned capability from the instrument planned capability endpoint
+        response = self.client.get(reverse('api:instrument-planned-capabilities', args=(self.instrument.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]['status'], capability['status'])
+        self.assertEqual(response.json()[0]['operation_modes'], {})
+        self.assertEqual(response.json()[0]['optical_element_groups'], {})
+        self.assertEqual(response.json()[0]['start'], capability['start'].replace("+00:00", "Z"))
+        self.assertEqual(response.json()[0]['end'], capability['end'].replace("+00:00", "Z"))
+
+    def test_create_planned_instrument_capability_fails_if_not_admin_user(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        capability = {'instrument': self.instrument.id,
+                      'status': models.PlannedInstrumentCapability.InstrumentStatus.UNAVAILABLE,
+                      'start': (timezone.now() + timedelta(days=4)).isoformat(),
+                      'end': (timezone.now() + timedelta(days=5)).isoformat()
+                     }
+        response = self.client.post(reverse('api:plannedinstrumentcapability-list'), data=capability, format='json')
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
+    def test_create_planned_instrument_capability_from_instrument_endpoint(self):
+        # Set planned instrument capability without instrument id, that is part of the endpoint instead
+        capability = {'status': models.PlannedInstrumentCapability.InstrumentStatus.UNAVAILABLE,
+                      'start': (timezone.now() + timedelta(days=4)).isoformat(),
+                      'end': (timezone.now() + timedelta(days=5)).isoformat()
+                     }
+        response = self.client.post(reverse('api:instrument-planned-capabilities', args=(self.instrument.id,)), data=capability, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['instrument'], self.instrument.id)
+        self.assertEqual(response.json()['status'], capability['status'])
+        self.assertEqual(response.json()['operation_modes'], {})
+        self.assertEqual(response.json()['optical_element_groups'], {})
+        self.assertEqual(response.json()['start'], capability['start'].replace("+00:00", "Z"))
+        self.assertEqual(response.json()['end'], capability['end'].replace("+00:00", "Z"))
+
+    def test_create_planned_instrument_capability_from_instrument_endpoint_fails_if_not_admin_user(self):
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        capability = {'status': models.PlannedInstrumentCapability.InstrumentStatus.UNAVAILABLE,
+                      'start': (timezone.now() + timedelta(days=4)).isoformat(),
+                      'end': (timezone.now() + timedelta(days=5)).isoformat()
+                     }
+        response = self.client.post(reverse('api:instrument-planned-capabilities', args=(self.instrument.id,)), data=capability, format='json')
+        self.assertContains(response, 'You do not have permission', status_code=403)
+
+    def test_create_planned_instrument_capability_fails_if_end_before_start(self):
+        capability = {'instrument': self.instrument.id,
+                      'status': models.PlannedInstrumentCapability.InstrumentStatus.UNAVAILABLE,
+                      'end': (timezone.now() + timedelta(days=4)).isoformat(),
+                      'start': (timezone.now() + timedelta(days=5)).isoformat()
+                     }
+        response = self.client.post(reverse('api:plannedinstrumentcapability-list'), data=capability, format='json')
+        self.assertContains(response, 'The end datetime must be greater than or equal to the start datetime', status_code=400)
+
+    def test_getting_all_planned_instrument_capabilities_for_instrument(self):
+        self.client.logout()
+        # Add a second planned instrument capability
+        second_capability = mixer.blend(
+            models.PlannedInstrumentCapability, instrument=self.instrument,
+            status=models.PlannedInstrumentCapability.InstrumentStatus.UNAVAILABLE,
+            start=timezone.now() + timedelta(days=4),
+            end=timezone.now() + timedelta(days=5),
+        )
+        # Test that two planned telescope statuses are received in ascending start date order
+        response = self.client.get(reverse('api:instrument-planned-capabilities', args=(self.instrument.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 2)
+        latest_capability = response.json()[0]
+        self.assertEqual(latest_capability['status'], second_capability.status)
+        self.assertEqual(latest_capability['start'], second_capability.start.isoformat().replace("+00:00", "Z"))
+        first_capability = response.json()[1]
+        self.assertEqual(first_capability['status'], self.planned_instrument_capability.status)
+        self.assertEqual(first_capability['start'],  self.planned_instrument_capability.start.isoformat().replace("+00:00", "Z"))
+
+    def test_delete_planned_instrument_capability(self):
+        capability_id = self.planned_instrument_capability.id
+        response = self.client.delete(reverse('api:plannedinstrumentcapability-detail', args=(capability_id,)))
+        self.assertEqual(response.status_code, 204)
+        # Now check that that planned instrument capability no longer exists
+        response = self.client.get(reverse('api:instrument-planned-capabilities', args=(self.instrument.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 0)
+
+    def test_delete_planned_instrument_capability_fails_if_not_admin_user(self):
+        capability_id = self.planned_instrument_capability.id
+        basic_user = mixer.blend(User, is_superuser=False)
+        self.client.force_login(basic_user)
+        response = self.client.delete(reverse('api:plannedinstrumentcapability-detail', args=(capability_id,)))
+        self.assertContains(response, 'You do not have permission', status_code=403)
+        # Now check that that planned instrument capability still exists
+        response = self.client.get(reverse('api:instrument-planned-capabilities', args=(self.instrument.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+
+    def test_update_planned_instrument_capability_fields(self):
+        capability_id = self.planned_instrument_capability.id
+        old_start = self.planned_instrument_capability.start
+        # Check that that planned instrument capability start time is the old_start
+        response = self.client.get(reverse('api:instrument-planned-capabilities', args=(self.instrument.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]['start'], old_start.isoformat().replace("+00:00", "Z"))
+        # Now patch update to a new start time
+        new_start = old_start - timedelta(days=20)
+        new_end = new_start + timedelta(days=7)
+        update = {
+            'start': new_start.isoformat(),
+            'end': new_end.isoformat()
+        }
+        response = self.client.patch(reverse('api:plannedinstrumentcapability-detail', args=(capability_id,)), data=update, format='json')
+        self.assertEqual(response.status_code, 200)
+        # Now check that that planned instrument capability exists and its start time is the new_start
+        response = self.client.get(reverse('api:instrument-planned-capabilities', args=(self.instrument.id,)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]['start'], new_start.isoformat().replace("+00:00", "Z"))
+        self.assertEqual(response.json()[0]['end'], new_end.isoformat().replace("+00:00", "Z"))

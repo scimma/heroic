@@ -21,6 +21,8 @@ class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     credential_name = models.CharField(max_length=256, blank=True, default='', help_text='Scimma Auth User Scram Credential name')
     credential_password = models.CharField(max_length=256, blank=True, default='', help_text='Scimma Auth User Scram Credential password')
+    created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
+    modified = models.DateTimeField(auto_now=True, help_text='When this model was last modified')
 
     @property
     def api_token(self):
@@ -32,17 +34,19 @@ class Observatory(models.Model):
     class Meta:
         verbose_name_plural = 'Observatories'
 
-    id = models.CharField(max_length=63, primary_key=True)
-    name = models.CharField(max_length=255, help_text=_('Observatory Name'))
+    id = models.CharField(max_length=63, primary_key=True, verbose_name='Observatory ID')
+    name = models.CharField(max_length=255, help_text=_('Observatory Name'), verbose_name='Observatory Name')
     admin = models.ForeignKey(UserProxy, null=True, blank=True, on_delete=models.SET_NULL)
+    created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
+    modified = models.DateTimeField(auto_now=True, help_text='When this model was last modified')
 
     def __str__(self):
         return self.name
 
 
 class Site(models.Model):
-    id = models.CharField(max_length=127, primary_key=True)
-    name = models.CharField(max_length=255, help_text=_('Site Name'))
+    id = models.CharField(max_length=127, primary_key=True, verbose_name='Site ID')
+    name = models.CharField(max_length=255, help_text=_('Site Name'), verbose_name='Site Name')
     timezone = models.CharField(default='UTC', max_length=64, help_text=_('Timezone Name'))
     elevation = models.FloatField(
         validators=[MinValueValidator(-500.0), MaxValueValidator(100000.0)],
@@ -55,14 +59,16 @@ class Site(models.Model):
         help_text=_('Link to page with site weather information')
     )
     observatory = models.ForeignKey(Observatory, on_delete=models.CASCADE, related_name="sites")
+    created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
+    modified = models.DateTimeField(auto_now=True, help_text='When this model was last modified')
 
     def __str__(self):
         return self.name
 
 
 class Telescope(models.Model):
-    id = models.CharField(max_length=191, primary_key=True)
-    name = models.CharField(max_length=255, help_text=_('Telescope Name'))
+    id = models.CharField(max_length=191, primary_key=True, verbose_name='Telescope ID')
+    name = models.CharField(max_length=255, help_text=_('Telescope Name'), verbose_name='Telescope Name')
     aperture = models.FloatField(
         default=0.0, validators=[MinValueValidator(0)],
         help_text=_('The aperture of this telescope in meters')
@@ -104,6 +110,8 @@ class Telescope(models.Model):
         help_text=_('Link to page with telescope information')
     )
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="telescopes")
+    created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
+    modified = models.DateTimeField(auto_now=True, help_text='When this model was last modified')
 
     def __str__(self):
         return self.name
@@ -114,8 +122,8 @@ class Telescope(models.Model):
 
 
 class Instrument(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
-    name = models.CharField(max_length=255, help_text=_('Instrument name'))
+    id = models.CharField(max_length=255, primary_key=True, verbose_name='Instrument ID')
+    name = models.CharField(max_length=255, help_text=_('Instrument name'), verbose_name='Instrument Name')
     available = models.BooleanField(default=True, help_text=_('Whether this Instrument is available or not'))
     instrument_url = models.URLField(
         max_length=255,
@@ -124,6 +132,8 @@ class Instrument(models.Model):
         help_text=_('Link to page with instrument information')
     )
     telescope = models.ForeignKey(Telescope, on_delete=models.CASCADE, related_name="instruments")
+    created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
+    modified = models.DateTimeField(auto_now=True, help_text='When this model was last modified')
 
     def __str__(self):
         return self.name
@@ -155,6 +165,7 @@ class TelescopeStatus(models.Model):
         blank=True, default=dict,
         help_text=_('Extra data related to current telescope status')
     )
+    created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
 
     def __str__(self):
         return f"{self.telescope.name} - {self.status} at {self.date}"
@@ -217,9 +228,81 @@ class InstrumentCapability(models.Model):
     operation_modes = models.JSONField(
         blank=True, default=dict, help_text=_('Dictionary of Operation modes available for instrument')
     )
+    created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
 
     def __str__(self):
         return f"{self.instrument.name} - Capability at {self.date}"
+
+    @property
+    def observatory(self):
+        return self.instrument.observatory
+
+
+class PlannedTelescopeStatus(models.Model):
+    class Meta:
+        verbose_name_plural = 'Planned Telescope Statuses'
+        get_latest_by = 'date'
+        ordering = ['start']
+
+    class StatusChoices(models.TextChoices):
+        AVAILABLE = 'AVAILABLE', _('Available')
+        UNAVAILABLE = 'UNAVAILABLE', _('Unavailable')
+        SCHEDULABLE = 'SCHEDULABLE', _('Schedulable')
+
+    start = models.DateTimeField(db_index=True, help_text='Date when this planned telescope status first applies')
+    end = models.DateTimeField(db_index=True, help_text='Date to stop considering this planned telescope status')
+    telescope = models.ForeignKey(Telescope, on_delete=models.CASCADE, related_name="planned_statuses")
+    status = models.CharField(
+        max_length=20, choices=StatusChoices.choices,
+        default=StatusChoices.AVAILABLE, help_text=_('Telescope Status')
+    )
+    reason = models.TextField(blank=True, null=True, help_text=_('Reason for the planned telescope status'))
+    extra = models.JSONField(
+        blank=True, default=dict,
+        help_text=_('Extra data related to the planned telescope status')
+    )
+    created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
+    modified = models.DateTimeField(auto_now=True, help_text='When this model was last modified')
+
+    def __str__(self):
+        return f"{self.telescope.name} - {self.status} from {self.start} to {self.end}"
+
+    @property
+    def observatory(self):
+        return self.telescope.observatory
+
+
+class PlannedInstrumentCapability(models.Model):
+
+    class Meta:
+        verbose_name_plural = 'Planned Instrument Capabilities'
+        get_latest_by = 'date'
+        ordering = ['start']
+
+    class InstrumentStatus(models.TextChoices):
+        AVAILABLE = 'AVAILABLE', _('Available')
+        UNAVAILABLE = 'UNAVAILABLE', _('Unavailable')
+        SCHEDULABLE = 'SCHEDULABLE', _('Schedulable')
+
+    start = models.DateTimeField(db_index=True, help_text='Date when this planned instrument capability first applies')
+    end = models.DateTimeField(db_index=True, help_text='Date to stop considering this planned instrument capability')
+    instrument = models.ForeignKey(Instrument, on_delete=models.CASCADE, related_name="planned_capabilities")
+    status = models.CharField(
+        max_length=32, choices=InstrumentStatus.choices,
+        default=InstrumentStatus.AVAILABLE,
+        help_text=_('Instrument availability status')
+    )
+    optical_element_groups = models.JSONField(
+        blank=True, default=dict, help_text=_('Dictionary of Optical elements available for instrument')
+    )
+    operation_modes = models.JSONField(
+        blank=True, default=dict, help_text=_('Dictionary of Operation modes available for instrument')
+    )
+    created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
+    modified = models.DateTimeField(auto_now=True, help_text='When this model was last modified')
+
+    def __str__(self):
+        return f"{self.instrument.name} - Capability from {self.start} to {self.end}"
 
     @property
     def observatory(self):
