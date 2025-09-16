@@ -11,10 +11,11 @@ from heroic_api.models import (Observatory, Site, Telescope, Instrument, Telesco
 class ProfileSerializer(serializers.ModelSerializer):
     email = serializers.CharField(source='user.email', read_only=True)
     api_token = serializers.CharField(read_only=True)
+    managed_observatories = serializers.ListField(child=serializers.CharField(), read_only=True)
 
     class Meta:
         model = Profile
-        fields = ('api_token', 'email', 'credential_name')
+        fields = ('api_token', 'email', 'credential_name', 'managed_observatories')
 
 
 class TelescopeStatusSerializer(serializers.ModelSerializer):
@@ -167,6 +168,9 @@ class InstrumentSerializer(serializers.ModelSerializer):
             data['optical_element_groups'] = current_capability.optical_element_groups
             data['operation_modes'] = current_capability.operation_modes
         except InstrumentCapability.DoesNotExist:
+            data['optical_element_groups'] = {}
+            data['operation_modes'] = {}
+            data['status'] = InstrumentCapability.InstrumentStatus.UNAVAILABLE
             pass
         return data
 
@@ -236,6 +240,9 @@ class TelescopeSerializer(serializers.ModelSerializer):
             if current_status.extra:
                 data['extra'] = current_status.extra
         except TelescopeStatus.DoesNotExist:
+            data['status'] = TelescopeStatus.StatusChoices.UNAVAILABLE
+            data['reason'] = ''
+            data['extra'] = {}
             pass
         return data
 
@@ -403,6 +410,16 @@ class TargetVisibilityQuerySerializer(serializers.Serializer):
     )
     daily_motion = serializers.FloatField(
         required=False, help_text=_('Daily Motion angle in degrees')
+    )
+
+    include_status = serializers.BooleanField(
+        required=False, default=False,
+        help_text=_('Include current and historical telescope and instrument status availability in visibility intervals')
+    )
+
+    include_planned_status = serializers.BooleanField(
+        required=False, default=False,
+        help_text=_('Include planned future telescope and instrument status availability in visibility intervals')
     )
 
     def validate(self, data):

@@ -28,6 +28,10 @@ class Profile(models.Model):
     def api_token(self):
         return Token.objects.get_or_create(user=self.user)[0]
 
+    @property
+    def managed_observatories(self):
+        return [obs.id for obs in self.user.observatory_set.all()]
+
 
 class Observatory(models.Model):
 
@@ -152,7 +156,7 @@ class TelescopeStatus(models.Model):
     class StatusChoices(models.TextChoices):
         AVAILABLE = 'AVAILABLE', _('Available')
         UNAVAILABLE = 'UNAVAILABLE', _('Unavailable')
-        SCHEDULABLE = 'SCHEDULABLE', _('Schedulable')
+        SCHEDULABLE = 'SCHEDULABLE', _('Queue Schedulable')
 
     date = models.DateTimeField(db_index=True)
     telescope = models.ForeignKey(Telescope, on_delete=models.CASCADE, related_name="statuses")
@@ -213,7 +217,7 @@ class InstrumentCapability(models.Model):
     class InstrumentStatus(models.TextChoices):
         AVAILABLE = 'AVAILABLE', _('Available')
         UNAVAILABLE = 'UNAVAILABLE', _('Unavailable')
-        SCHEDULABLE = 'SCHEDULABLE', _('Schedulable')
+        SCHEDULABLE = 'SCHEDULABLE', _('Queue Schedulable')
 
     date = models.DateTimeField(db_index=True)
     instrument = models.ForeignKey(Instrument, on_delete=models.CASCADE, related_name="capabilities")
@@ -247,7 +251,7 @@ class PlannedTelescopeStatus(models.Model):
     class StatusChoices(models.TextChoices):
         AVAILABLE = 'AVAILABLE', _('Available')
         UNAVAILABLE = 'UNAVAILABLE', _('Unavailable')
-        SCHEDULABLE = 'SCHEDULABLE', _('Schedulable')
+        SCHEDULABLE = 'SCHEDULABLE', _('Queue Schedulable')
 
     start = models.DateTimeField(db_index=True, help_text='Date when this planned telescope status first applies')
     end = models.DateTimeField(db_index=True, help_text='Date to stop considering this planned telescope status')
@@ -282,7 +286,7 @@ class PlannedInstrumentCapability(models.Model):
     class InstrumentStatus(models.TextChoices):
         AVAILABLE = 'AVAILABLE', _('Available')
         UNAVAILABLE = 'UNAVAILABLE', _('Unavailable')
-        SCHEDULABLE = 'SCHEDULABLE', _('Schedulable')
+        SCHEDULABLE = 'SCHEDULABLE', _('Queue Schedulable')
 
     start = models.DateTimeField(db_index=True, help_text='Date when this planned instrument capability first applies')
     end = models.DateTimeField(db_index=True, help_text='Date to stop considering this planned instrument capability')

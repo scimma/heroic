@@ -2,7 +2,7 @@ from rest_framework.test import APITestCase
 from mixer.backend.django import mixer
 from django.contrib.auth.models import User
 from django.urls import reverse
-from datetime import datetime
+from datetime import datetime, timezone
 
 from heroic_api import models
 
@@ -198,6 +198,58 @@ class TestVisibilityIntervals(BaseVisibilityTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('eccentricity', response.json())
         self.assertIn('orbital_inclination', response.json())
+
+    def test_visibility_intervals_respects_past_telescope_status(self):
+        query = self.m22_basic_target_query.copy()
+        query['end'] = datetime(2025, 3, 10).isoformat()
+        query['telescopes'] = [self.telescope.id]
+        query['include_status'] = True
+        response = self.client.get(reverse('api:visibility-intervals'), data=query)
+        # Check that there is 2025-03-04/5/6 in the visibility intervals somewhere
+        self.assertContains(response, '2025-03-04T', status_code=200)
+        self.assertContains(response, '2025-03-05T', status_code=200)
+        self.assertContains(response, '2025-03-06T', status_code=200)
+
+        # Now create an old status blocking out 2025-03-05 and verify it gets blocked out
+        mixer.blend(models.TelescopeStatus, date=datetime(2025, 3, 5, tzinfo=timezone.utc), telescope=self.telescope, status=models.TelescopeStatus.StatusChoices.UNAVAILABLE)
+        mixer.blend(models.TelescopeStatus, date=datetime(2025, 3, 6, tzinfo=timezone.utc), telescope=self.telescope, status=models.TelescopeStatus.StatusChoices.AVAILABLE)
+        response = self.client.get(reverse('api:visibility-intervals'), data=query)
+        # Check that there is no longer 2025-03-05 in the visibility intervals
+        self.assertContains(response, '2025-03-04T', status_code=200)
+        self.assertNotContains(response, '2025-03-05T', status_code=200)
+        self.assertContains(response, '2025-03-06T', status_code=200)
+
+    def test_visibility_intervals_respects_past_instrument_status(self):
+        query = self.m22_basic_target_query.copy()
+        query['end'] = datetime(2025, 3, 10).isoformat()
+        query['telescopes'] = [self.telescope.id]
+        query['include_status'] = True
+        response = self.client.get(reverse('api:visibility-intervals'), data=query)
+        # Check that there is 2025-03-04/5/6 in the visibility intervals somewhere
+        self.assertContains(response, '2025-03-04T', status_code=200)
+        self.assertContains(response, '2025-03-05T', status_code=200)
+        self.assertContains(response, '2025-03-06T', status_code=200)
+
+        # Now create an old instrument and status blocking out 2025-03-05 and verify it gets blocked out
+        instrument = mixer.blend(models.Instrument, telescope=self.telescope)
+        mixer.blend(models.InstrumentCapability, instrument=instrument, date=datetime(2025, 2, 1, tzinfo=timezone.utc), status=models.InstrumentCapability.InstrumentStatus.AVAILABLE)
+        mixer.blend(models.InstrumentCapability, instrument=instrument, date=datetime(2025, 3, 5, tzinfo=timezone.utc), status=models.InstrumentCapability.InstrumentStatus.UNAVAILABLE)
+        mixer.blend(models.InstrumentCapability, instrument=instrument, date=datetime(2025, 3, 6, tzinfo=timezone.utc), status=models.InstrumentCapability.InstrumentStatus.AVAILABLE)
+
+        response = self.client.get(reverse('api:visibility-intervals'), data=query)
+        # Check that there is no longer 2025-03-05 in the visibility intervals
+        self.assertContains(response, '2025-03-04T', status_code=200)
+        self.assertNotContains(response, '2025-03-05T', status_code=200)
+        self.assertContains(response, '2025-03-06T', status_code=200)
+
+        # Now create a second instrument that is always available and see that 2025-03-05 has visibility again
+        instrument2 = mixer.blend(models.Instrument, telescope=self.telescope)
+        mixer.blend(models.InstrumentCapability, instrument=instrument2, date=datetime(2025, 2, 1, tzinfo=timezone.utc), status=models.InstrumentCapability.InstrumentStatus.AVAILABLE)
+        response = self.client.get(reverse('api:visibility-intervals'), data=query)
+        # Check that there is 2025-03-04/5/6 in the visibility intervals somewhere
+        self.assertContains(response, '2025-03-04T', status_code=200)
+        self.assertContains(response, '2025-03-05T', status_code=200)
+        self.assertContains(response, '2025-03-06T', status_code=200)
 
 
 class TestVisibilityAirmass(BaseVisibilityTestCase):

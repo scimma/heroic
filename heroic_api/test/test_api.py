@@ -73,9 +73,10 @@ class TestCreateApi(APITestCase):
         self.assertEqual(response.json()['name'], telescope['name'])
         self.assertEqual(response.json()['id'], telescope['id'])
         self.assertEqual(response.json()['site'], self.site.id)
-        self.assertNotIn('status', response.json())
-        self.assertNotIn('reason', response.json())
-        self.assertNotIn('extra', response.json())
+        # With no status, the default unavailable is returned as status
+        self.assertEqual(response.json()['status'], models.TelescopeStatus.StatusChoices.UNAVAILABLE)
+        self.assertEqual(response.json()['reason'], '')
+        self.assertEqual(response.json()['extra'], {})
 
     def test_create_telescope_with_non_admin_user_fails(self):
         basic_user = mixer.blend(User, is_superuser=False)
@@ -116,9 +117,10 @@ class TestCreateApi(APITestCase):
         self.assertEqual(response.json()['name'], instrument['name'])
         self.assertEqual(response.json()['id'], instrument['id'])
         self.assertEqual(response.json()['telescope'], self.telescope.id)
-        self.assertNotIn('status', response.json())
-        self.assertNotIn('operation_modes', response.json())
-        self.assertNotIn('optical_element_groups', response.json())
+        # With no capability, the default unavailable is returned as status
+        self.assertEqual(response.json()['status'], models.InstrumentCapability.InstrumentStatus.UNAVAILABLE)
+        self.assertEqual(response.json()['operation_modes'], {})
+        self.assertEqual(response.json()['optical_element_groups'], {})
 
     def test_create_instrument_with_non_admin_user_fails(self):
         basic_user = mixer.blend(User, is_superuser=False)
