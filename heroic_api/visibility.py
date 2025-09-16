@@ -2,7 +2,7 @@ from math import cos, radians
 from datetime import datetime, timedelta
 from django.utils import timezone
 
-from heroic_api.models import Telescope, TargetTypes
+from heroic_api.models import Telescope, TargetTypes, PlannedInstrumentCapability, PlannedTelescopeStatus, TelescopeStatus, InstrumentCapability, Instrument
 
 from rise_set.astrometry import (
     make_ra_dec_target, make_minor_planet_target,
@@ -35,7 +35,6 @@ def get_rise_set_intervals_by_telescope_for_target(data: dict) -> dict:
         intervals_by_telescope[telescope.id] = []
         rise_set_site = get_rise_set_site(telescope)
         visibility = get_rise_set_visibility(rise_set_site, start, end, telescope)
-        target_intervals = Intervals()
         try:
             target_intervals = visibility.get_observable_intervals(
                 rise_set_target,
@@ -47,11 +46,143 @@ def get_rise_set_intervals_by_telescope_for_target(data: dict) -> dict:
             )
             # Use the intervals library to coaslesce adjacent intervals for non-sidereal targets since they are sampled
             # Will probably use more things in Intervals later to intersect/union intervals together
-            intervals_by_telescope[telescope.id] = Intervals(target_intervals).toTupleList()
+            target_intervals = Intervals(target_intervals)
+            # Now attempt to filter out current or historical periods of telescope or instrument UNAVAILABILITY
+            if data['include_status']:
+                unavailable_intervals = get_telescope_unavailable_intervals(start, end, telescope.id)
+                target_intervals = target_intervals.subtract(unavailable_intervals)
+            # Now attempt to filter out planned future periods of telescope or instrument UNAVAILABILITY
+            if data['include_planned_status']:
+                unavailable_intervals = get_telescope_future_unavailable_intervals(start, end, telescope.id)
+                target_intervals = target_intervals.subtract(unavailable_intervals)
+            intervals_by_telescope[telescope.id] = target_intervals.toTupleList()
         except MovingViolation:
             pass
                 
     return intervals_by_telescope
+
+
+def get_telescope_unavailable_intervals(start, end, telescope_id):
+    """ Get the set of past intervals where the telescope is unavailable or all its instruments are unavailable
+    """
+    unavailable_intervals = Intervals()
+    if start < timezone.now():
+        # First get the set of TelescopeStatus intervals where the status is UNAVAILABLE
+        status_intervals = []
+        status_queryset = TelescopeStatus.objects.filter(telescope__id=telescope_id)
+        statuses = status_queryset.filter(date__gte=start)
+        # Must include the status before this start date since that status spans the start date
+        status_before_object = status_queryset.filter(date__lt=start).first()
+        if (status_before_object):
+            statuses = statuses | status_queryset.filter(id=status_before_object.id)
+        if statuses.count() > 0:
+            last_status = None
+            for status in statuses.order_by('date'):
+                if status.status == TelescopeStatus.StatusChoices.UNAVAILABLE:
+                    last_status = status
+                elif last_status:
+                    status_intervals.append(
+                        (max(last_status.date, start), min(status.date, end))
+                    )
+                    last_status = None
+            if last_status:
+                status_intervals.append(
+                    (max(last_status.date, start), end)
+                )
+            unavailable_intervals = Intervals(status_intervals)
+        # We must then get the set of Intervals where ALL of the Instruments of a Telescope are UNAVAILABLE
+        instruments_at_telescope = Instrument.objects.filter(telescope__id=telescope_id)
+        first_instrument_intervalset = None
+        instrument_intervalsets = []
+        for instrument in instruments_at_telescope:
+            capability_intervals = []
+            capability_queryset = InstrumentCapability.objects.filter(instrument=instrument)
+            capabilities = capability_queryset.filter(date__gte=start)
+            capability_before_object = capability_queryset.filter(date__lt=start).first()
+            if (capability_before_object):
+                capabilities = capabilities | capability_queryset.filter(id=capability_before_object.id)
+            if capabilities.count() > 0:
+                last_capability = None
+                for capability in capabilities.order_by('date'):
+                    if capability.status == InstrumentCapability.InstrumentStatus.UNAVAILABLE:
+                        last_capability = capability
+                    elif last_capability:
+                        capability_intervals.append(
+                            (max(last_capability.date, start), min(capability.date, end))
+                        )
+                        last_capability = None
+                if last_capability:
+                    capability_intervals.append(
+                        (max(last_capability.date, start), end)
+                    )
+                if first_instrument_intervalset is None:
+                    first_instrument_intervalset = Intervals(capability_intervals)
+                else:
+                    instrument_intervalsets.append(Intervals(capability_intervals))
+        if first_instrument_intervalset:
+            if len(instrument_intervalsets) > 0:
+                # The intersection of all instrument unavailability intervals on a telescope yields the intervals where ALL instruments are unavailable
+                first_instrument_intervalset = first_instrument_intervalset.intersect(instrument_intervalsets)
+            # If we have instrument unavailability intervals, then union those with the telescope unavailability intervals
+            unavailable_intervals = unavailable_intervals.union([first_instrument_intervalset])
+
+    return unavailable_intervals
+
+
+def get_telescope_future_unavailable_intervals(start, end, telescope_id):
+    """ Get the set of future intervals where the telescope is unavailable or all its instruments are unavailable
+    """
+    unavailable_intervals = Intervals()
+    capped_start = start
+    if capped_start < timezone.now():
+        capped_start = timezone.now()
+    if end > timezone.now():
+        # Get the current TelescopeStatus, since if that is unavailable then that is assumed to be the base state into the future
+        current_status = TelescopeStatus.objects.filter(telescope__id=telescope_id).first()
+        planned_status = PlannedTelescopeStatus.objects.filter(telescope__id=telescope_id, start__lte=end, end__gte=capped_start, status=PlannedTelescopeStatus.StatusChoices.UNAVAILABLE)
+        planned_status_intervals = []
+        for status in planned_status:
+            if current_status is None or current_status.status != status.status:
+                planned_status_intervals.append((max(capped_start, status.start), min(status.end, end)))
+
+        if current_status is None or current_status.status != TelescopeStatus.StatusChoices.UNAVAILABLE:
+            # In this case, the unavailable intervals are just the planned bad intervals
+            unavailable_intervals = Intervals(planned_status_intervals)
+        else:
+            # In this case, the unavailable intervals are all intervals other than those in planned good statuses
+            unavailable_intervals = Intervals([(capped_start, end)]).subtract(Intervals(planned_status_intervals))
+
+        # We must now get the set of planned Intervals where ALL of the Instruments of a Telescope are UNAVAILABLE
+        instruments_at_telescope = Instrument.objects.filter(telescope__id=telescope_id)
+        first_instrument_intervalset = None
+        instrument_intervalsets = []
+        for instrument in instruments_at_telescope:
+            capability_intervals = []
+            current_capability = InstrumentCapability.objects.filter(instrument=instrument).first()
+            capability_queryset = PlannedInstrumentCapability.objects.filter(instrument=instrument)
+            capabilities = capability_queryset.filter(end__gte=capped_start, start__lte=end)
+            for capability in capabilities:
+                if current_capability is None or current_capability.status != capability.status:
+                    capability_intervals.append((max(capped_start, capability.start), min(end, capability.end)))
+
+            if current_capability is None or current_capability.status != InstrumentCapability.InstrumentStatus.UNAVAILABLE:
+                capability_intervalset = Intervals(capability_intervals)
+            else:
+                capability_intervalset = Intervals([(capped_start, end)]).subtract(Intervals(capability_intervals))
+
+            if first_instrument_intervalset is None:
+                first_instrument_intervalset = capability_intervalset
+            else:
+                instrument_intervalsets.append(capability_intervalset)
+        # Now combine the instrument intervalsets to we only have unavailability if ALL instruments were unavailable
+        if first_instrument_intervalset:
+            if len(instrument_intervalsets) > 0:
+                # The intersection of all instrument unavailability intervals on a telescope yields the intervals where ALL instruments are unavailable
+                first_instrument_intervalset = first_instrument_intervalset.intersect(instrument_intervalsets)
+            # If we have instrument unavailability intervals, then union those with the telescope unavailability intervals
+            unavailable_intervals = unavailable_intervals.union([first_instrument_intervalset])
+
+    return unavailable_intervals
 
 
 def get_rise_set_site(telescope: Telescope):

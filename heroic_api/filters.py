@@ -6,7 +6,7 @@ from datetime import timezone
 from dateutil.parser import parse
 
 from heroic_api.models import (Telescope, TelescopeStatus, Instrument, InstrumentCapability, TelescopePointing,
-                               PlannedTelescopeStatus, PlannedInstrumentCapability)
+                               PlannedTelescopeStatus, PlannedInstrumentCapability, Site, Observatory)
 
 import math
 import logging
@@ -36,9 +36,9 @@ class InstrumentFilter(django_filters.FilterSet):
 
 
 class BaseTelescopeStatusFilter(django_filters.FilterSet):
-    site = django_filters.CharFilter(field_name='telescope__site__id')
-    observatory = django_filters.CharFilter(field_name='telescope__site__observatory__id')
-    telescope = django_filters.CharFilter(field_name='telescope__id')
+    site = django_filters.MultipleChoiceFilter(choices=[(site.id, site.id) for site in Site.objects.all()], field_name='telescope__site__id')
+    observatory = django_filters.MultipleChoiceFilter(choices=[(observatory.id, observatory.id) for observatory in Observatory.objects.all()], field_name='telescope__site__observatory__id')
+    telescope = django_filters.MultipleChoiceFilter(choices=[(telescope.id, telescope.id) for telescope in Telescope.objects.all()], field_name='telescope__id')
     status = django_filters.MultipleChoiceFilter(choices=TelescopeStatus.StatusChoices, field_name='status')
     reason = django_filters.CharFilter(field_name='reason', lookup_expr='contains', label='Reason contains')
     created_after = django_filters.IsoDateTimeFilter(
@@ -176,10 +176,10 @@ class TelescopePointingFilter(django_filters.FilterSet):
 
 
 class BaseInstrumentCapabilityFilter(django_filters.FilterSet):
-    site = django_filters.CharFilter(field_name='instrument__telescope__site__id')
-    observatory = django_filters.CharFilter(field_name='instrument__telescope__site__observatory__id')
-    telescope = django_filters.CharFilter(field_name='instrument__telescope__id')
-    instrument = django_filters.CharFilter(field_name='instrument__id')
+    site = django_filters.MultipleChoiceFilter(choices=[(site.id, site.id) for site in Site.objects.all()], field_name='instrument__telescope__site__id')
+    observatory = django_filters.MultipleChoiceFilter(choices=[(observatory.id, observatory.id) for observatory in Observatory.objects.all()], field_name='instrument__telescope__site__observatory__id')
+    telescope = django_filters.MultipleChoiceFilter(choices=[(telescope.id, telescope.id) for telescope in Telescope.objects.all()], field_name='instrument__telescope__id')
+    instrument = django_filters.MultipleChoiceFilter(choices=[(instrument.id, instrument.id) for instrument in Instrument.objects.all()], field_name='instrument__id')
     status = django_filters.MultipleChoiceFilter(choices=InstrumentCapability.InstrumentStatus, field_name='status')
     optical_elements_contains = django_filters.CharFilter(method='optical_elements_contains_filter')
     operation_modes_contains = django_filters.CharFilter(method='operation_modes_contains_filter')
