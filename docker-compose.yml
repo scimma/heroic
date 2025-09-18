@@ -8,18 +8,16 @@ services:
       POSTGRES_DB:       "${DB_NAME}"
       POSTGRES_USER:     "${DB_USER}"
       POSTGRES_PASSWORD: "${DB_PASSWORD}"
-    ports:
-      - "5432:5432"
     volumes:
       - heroic_data:/var/lib/postgresql/data
     networks:
       - heroic_net
 
-  web:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile
-    image: heroic-web
+    image: heroic-backend
     restart: always
     env_file:
       - .env
@@ -43,7 +41,7 @@ services:
     image: nginx:alpine
     restart: always
     depends_on:
-      - web
+      - backend
     ports:
       - "80:80"
       - "443:443"
@@ -52,6 +50,8 @@ services:
       - static_data:/app/static:ro
       - /etc/letsencrypt/live/heroic.scimma.org:/etc/letsencrypt/live/heroic.scimma.org:ro
       - /etc/letsencrypt/archive/heroic.scimma.org:/etc/letsencrypt/archive/heroic.scimma.org:ro
+      # - /etc/letsencrypt/live/dev.heroic.scimma.org:/etc/letsencrypt/live/dev.heroic.scimma.org:ro
+      # - /etc/letsencrypt/archive/dev.heroic.scimma.org:/etc/letsencrypt/archive/dev.heroic.scimma.org:ro
     networks:
       - heroic_net
 
@@ -62,3 +62,4 @@ volumes:
 networks:
   heroic_net:
     driver: bridge
+    name: heroic_net
