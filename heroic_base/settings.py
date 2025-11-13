@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'mozilla_django_oidc',
+    'tom_alertstreams',
     'heroic_api',
     'drf_spectacular',
 ]
@@ -220,6 +221,34 @@ CORS_ALLOWED_ORIGINS = [
     if host.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+
+# TOM-Alertstreams configuration
+SCIMMA_KAFKA_BASE_URL = os.getenv("SCIMMA_KAFKA_BASE_URL", default="kafka://dev.hop.scimma.org/")
+
+ALERT_STREAMS = [
+    {
+        'ACTIVE': True,
+        'NAME': 'tom_alertstreams.alertstreams.hopskotch.HopskotchAlertStream',
+        'OPTIONS': {
+            'URL': SCIMMA_KAFKA_BASE_URL,
+            'USERNAME': SCIMMA_AUTH_USERNAME,
+            'PASSWORD': SCIMMA_AUTH_PASSWORD,
+            # Group ID must be prefixed with SCiMMA SCRAM credential username to open the SCiMMA kafka stream
+            'GROUP_ID': SCIMMA_AUTH_USERNAME + '-' + os.getenv('HOPSKOTCH_GROUP_ID', 'heroic-dev'),
+            'TOPIC_HANDLERS': {
+                'igwn.gwistat.L1.range_history': 'heroic_api.alertstream_handlers.ingest_from_hop.handle_igwn_sensistivity_message',
+                'igwn.gwistat.V1.range_history': 'heroic_api.alertstream_handlers.ingest_from_hop.handle_igwn_sensistivity_message',
+                'igwn.gwistat.K1.range_history': 'heroic_api.alertstream_handlers.ingest_from_hop.handle_igwn_sensistivity_message',
+                'igwn.gwistat.H1.range_history': 'heroic_api.alertstream_handlers.ingest_from_hop.handle_igwn_sensistivity_message',
+                'igwn.gwistat.L1': 'heroic_api.alertstream_handlers.ingest_from_hop.handle_igwn_status_message',
+                'igwn.gwistat.V1': 'heroic_api.alertstream_handlers.ingest_from_hop.handle_igwn_status_message',
+                'igwn.gwistat.K1': 'heroic_api.alertstream_handlers.ingest_from_hop.handle_igwn_status_message',
+                'igwn.gwistat.H1': 'heroic_api.alertstream_handlers.ingest_from_hop.handle_igwn_status_message'
+            },
+        },
+    }
+]
 
 try:
     from local_settings import *

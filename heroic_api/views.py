@@ -214,44 +214,34 @@ class GWVisibilityAPIView(APIView):
                 telescopes_status = {}
                 for telescope in data['telescopes']:
                     # Get all status changes in the time range
-                    statuses = TelescopeStatus.objects.filter(
+                    statuses_in_range = TelescopeStatus.objects.filter(
                         telescope=telescope,
                         date__gte=data['start'],
                         date__lte=data['end']
-                    ).order_by('date')
-                    
+                        ).order_by('date')
+                    status_before = TelescopeStatus.objects.filter(
+                        telescope=telescope,
+                        date__lt=data['start']
+                        ).first()
+                    if (status_before):
+                        statuses_in_range |= TelescopeStatus.objects.filter(id=status_before.id)
+
                     # Convert to intervals
                     status_intervals = []
-                    for i, status in enumerate(statuses):
+                    for i, status in enumerate(statuses_in_range):
                         interval = {
                             'start': status.date,
                             'status': status.status,
-                            'sensitivity': status.extra.get('sensitivity', '0 Mpc')
+                            'sensitivity': status.extra.get('sensitivity', '0')
                         }
                         # Set end time to next status or query end
-                        if i + 1 < len(statuses):
-                            interval['end'] = statuses[i + 1].date
+                        if i + 1 < len(statuses_in_range):
+                            interval['end'] = statuses_in_range[i + 1].date
                         else:
                             interval['end'] = data['end']
                         
                         status_intervals.append(interval)
-                    
-                    # Handle case where there are no status changes in range
-                    if not status_intervals:
-                        # Get the most recent status before start time
-                        latest_status = TelescopeStatus.objects.filter(
-                            telescope=telescope,
-                            date__lt=data['start']
-                        ).order_by('-date').first()
-                        
-                        if latest_status:
-                            status_intervals.append({
-                                'start': data['start'],
-                                'end': data['end'],
-                                'status': latest_status.status,
-                                'sensitivity': latest_status.extra.get('sensitivity', '0 Mpc')
-                            })
-                    
+
                     telescopes_status[telescope.id] = status_intervals
                 
                 # Calculate GW visibility timeline
