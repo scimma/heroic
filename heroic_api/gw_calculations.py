@@ -276,8 +276,10 @@ def find_horizon_distance(available_detectors: List[Dict], ra: float, dec: float
         f_plus, f_cross = antenna_pattern(ra, dec, time, det['id'])
         
         # Extract sensitivity value
-        sensitivity = float(det['sensitivity'].replace(' Mpc', ''))
-        
+        try:
+            sensitivity = float(det['sensitivity'].replace(' Mpc', ''))
+        except AttributeError:
+            sensitivity = det['sensitivity']
         # Calculate SNR at reference distance
         snr_at_ref = calculate_single_detector_snr(
             reference_distance, 
