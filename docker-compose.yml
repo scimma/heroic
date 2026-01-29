@@ -68,12 +68,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
       - static_data:/app/static:ro
-      - /etc/letsencrypt/live/heroic.scimma.org:/etc/letsencrypt/live/heroic.scimma.org:ro
-      - /etc/letsencrypt/archive/heroic.scimma.org:/etc/letsencrypt/archive/heroic.scimma.org:ro
-      # - /etc/letsencrypt/live/dev.heroic.scimma.org:/etc/letsencrypt/live/dev.heroic.scimma.org:ro
-      # - /etc/letsencrypt/archive/dev.heroic.scimma.org:/etc/letsencrypt/archive/dev.heroic.scimma.org:ro
     networks:
       - heroic_net
 

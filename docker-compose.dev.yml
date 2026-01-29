@@ -1,0 +1,6 @@
+services:
+  nginx:
+    volumes:
+      - ./deploy/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt/live/dev.heroic.scimma.org:/etc/letsencrypt/live/dev.heroic.scimma.org:ro
+      - /etc/letsencrypt/archive/dev.heroic.scimma.org:/etc/letsencrypt/archive/dev.heroic.scimma.org:ro
