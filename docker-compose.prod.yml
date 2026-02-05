@@ -1,0 +1,7 @@
+services:
+  nginx:
+    volumes:
+      - ./deploy/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt/live/heroic.scimma.org:/etc/letsencrypt/live/heroic.scimma.org:ro
+      - /etc/letsencrypt/archive/heroic.scimma.org:/etc/letsencrypt/archive/heroic.scimma.org:ro
+      - /var/www/certbot:/var/www/certbot:ro
