@@ -61,3 +61,4 @@ You will also want to create a local superuser account to interact with the admi
 Unit tests can be run with:
 
     poetry run python manage.py test
+# Testing automated deployment
