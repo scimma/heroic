@@ -22,24 +22,45 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          printf "%s" "${{ secrets.DEV_SSH_KEY }}" > ~/.ssh/id_deploy
+          # Write multi-line key safely
+          cat > ~/.ssh/id_deploy <<'EOF'
+          ${{ secrets.DEV_SSH_KEY }}
+          EOF
+          # Fix CRLF if secret was pasted with Windows line endings
+          tr -d '\r' < ~/.ssh/id_deploy > ~/.ssh/id_deploy.clean
+          mv ~/.ssh/id_deploy.clean ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           ssh-keyscan -H "${{ secrets.DEV_SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: SSH sanity check
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes \
+            "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}" \
+            "echo ok-from-$(hostname)"
 
       - name: Upload .env to DEV
         shell: bash
         run: |
           set -euo pipefail
-          printf "%s" "${{ secrets.DEV_ENV_FILE }}" > .env
-          scp -i ~/.ssh/id_deploy .env "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}:/home/${{ secrets.DEV_SSH_USER }}/heroic/.env"
+          # Write multi-line .env safely (same multiline-secret issue)
+          cat > .env <<'EOF'
+          ${{ secrets.DEV_ENV_FILE }}
+          EOF
+          tr -d '\r' < .env > .env.clean
+          mv .env.clean .env
+          scp -i ~/.ssh/id_deploy -o IdentitiesOnly=yes .env \
+            "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}:/home/${{ secrets.DEV_SSH_USER }}/heroic/.env"
           rm -f .env
 
       - name: Deploy on DEV VM
         shell: bash
         run: |
           set -euo pipefail
-
-          ssh -i ~/.ssh/id_deploy "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}" 'bash -se' <<'REMOTE'
+          ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes \
+            "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}" \
+            'bash -se' <<'REMOTE'
           set -euo pipefail
 
           DEPLOY_PATH="$HOME/heroic"
