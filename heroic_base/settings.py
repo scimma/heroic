@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'django_filters',
     'corsheaders',
     'django_extensions',
+    'django_dramatiq',
     'rest_framework',
     'rest_framework.authtoken',
     'mozilla_django_oidc',
@@ -168,6 +169,8 @@ SPECTACULAR_SETTINGS = {
     # OTHER SETTINGS
 }
 
+RUBIN_SCHEDULE_URL = os.getenv('RUBIN_SCHEDULE_URL', 'https://usdf-rsp.slac.stanford.edu/obsloctap/schedule')
+
 HEROIC_FRONT_END_BASE_URL = os.getenv('HEROIC_FRONT_END_BASE_URL', 'http://127.0.0.1:5173/')
 
 # Client ID (OIDC_RP_CLIENT_ID) and SECRET (OIDC_RP_CLIENT_SECRET)
@@ -222,6 +225,20 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
+DRAMATIQ_BROKER_URL = os.getenv("DRAMATIQ_BROKER_URL", "redis://127.0.0.1:6379/1")
+DRAMATIQ_BROKER = {
+    "BROKER": "dramatiq.brokers.redis.RedisBroker",
+    "OPTIONS": {
+        "url": DRAMATIQ_BROKER_URL
+    },
+    "MIDDLEWARE": [
+        "dramatiq.middleware.AgeLimit",
+        "dramatiq.middleware.TimeLimit",
+        "dramatiq.middleware.Callbacks",
+        "dramatiq.middleware.Retries",
+        "django_dramatiq.middleware.DbConnectionsMiddleware",
+    ]
+}
 
 # TOM-Alertstreams configuration
 SCIMMA_KAFKA_BASE_URL = os.getenv("SCIMMA_KAFKA_BASE_URL", default="kafka://dev.hop.scimma.org/")

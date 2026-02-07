@@ -1,5 +1,6 @@
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from django.contrib.gis.db.models.functions import Translate
 from drf_spectacular.utils import extend_schema_serializer, OpenApiExample
 from rest_framework import serializers
 from heroic_api.visibility import telescope_dark_intervals
@@ -103,6 +104,15 @@ class TelescopePointingSerializer(serializers.ModelSerializer):
         data['ra'] = instance.coordinate.x
         data['dec'] = instance.coordinate.y
         return data
+
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+        translated_polygon = TelescopePointing.objects.filter(pk=instance.pk).annotate(
+            fov=Translate('instrument__footprint', instance.coordinate.x, instance.coordinate.y)
+        )[0].fov
+        instance.field = translated_polygon
+        instance.save()
+        return instance
 
 
 class InstrumentCapabilitySerializer(serializers.ModelSerializer):
