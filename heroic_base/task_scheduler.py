@@ -8,7 +8,7 @@ def run():
     scheduler = BlockingScheduler()
     scheduler.add_job(
         poll_rubin_schedule.send,
-        CronTrigger.from_crontab('* * * * *'),
+        CronTrigger.from_crontab('*/10 * * * *'),
         max_instances=1,
         replace_existing=True
     )

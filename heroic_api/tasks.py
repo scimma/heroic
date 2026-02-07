@@ -27,8 +27,8 @@ def poll_rubin_schedule():
     except Instrument.DoesNotExist:
         logger.error(f"Cannot poll Rubin schedule: Rubin instrument {RUBIN_INSTRUMENT_ID} is not defined")
     
-    # Get the schedule from 10 minutes in the past until 25 hours later
-    start = datetime.now() - timedelta(minutes=10)
+    # Get the schedule from 15 minutes in the past until 25 hours later
+    start = datetime.now() - timedelta(minutes=15)
     logger.info(f'Getting the Rubin schedule starting at {start.isoformat()}')
     params = {'time': '25', 'start': start.isoformat()}
     response = requests.get(settings.RUBIN_SCHEDULE_URL, params=params)
