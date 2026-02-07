@@ -1,6 +1,6 @@
 import django_filters
 from django import forms
-from django.contrib.gis.geos import Point, Polygon
+from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
 from datetime import timezone
 from dateutil.parser import parse
