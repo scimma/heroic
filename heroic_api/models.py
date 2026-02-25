@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.gis.db import models as gis_models
 from django.utils.translation import gettext_lazy as _
@@ -135,6 +136,7 @@ class Instrument(models.Model):
         blank=True,
         help_text=_('Link to page with instrument information')
     )
+    footprint = gis_models.PolygonField(help_text='Footprint of the CCD of the instrument, in relative coordinates (centered on 0,0)', srid=4326, null=True, blank=True)
     telescope = models.ForeignKey(Telescope, on_delete=models.CASCADE, related_name="instruments")
     created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
     modified = models.DateTimeField(auto_now=True, help_text='When this model was last modified')
@@ -185,15 +187,25 @@ class TelescopePointing(models.Model):
         verbose_name_plural = 'Telescope Pointings'
         get_latest_by = 'date'
         ordering = ['-date']
+        indexes = [
+            # Index when planned = True
+            models.Index(
+                fields=['planned',],
+                name='tp_planned_idx',
+                condition=Q(planned=True)
+            ),
+        ]
 
     date = models.DateTimeField(db_index=True)
+    planned = models.BooleanField(default=False, help_text='This is a planned pointing for the future, it is subject to being deleted once its in the past.')
     telescope = models.ForeignKey(Telescope, on_delete=models.CASCADE, related_name="pointings")
     instrument = models.ForeignKey(
         Instrument, on_delete=models.SET_NULL, blank=True, null=True, related_name="pointings",
         help_text=_('Instrument reference for current pointing')
     )
     target = models.CharField(max_length=255, blank=True, null=True, help_text=_('Target name for current pointing'))
-    coordinate = gis_models.PointField(help_text='Target ra/dec for the current pointing in decimal degrees')
+    coordinate = gis_models.PointField(help_text='Central ra/dec for the current pointing in decimal degrees', srid=4326)
+    field = gis_models.PolygonField(help_text='FOV for the current pointing in decimal degrees', srid=4326, null=True, blank=True)
     extra = models.JSONField(
         blank=True, default=dict,
         help_text=_('Extra data related to current pointing')

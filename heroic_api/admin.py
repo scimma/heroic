@@ -109,7 +109,7 @@ class TelescopePointingAdmin(admin.ModelAdmin):
     date_hierarchy = 'date'
     extra = forms.JSONField(encoder=PrettyJSONEncoder)
     list_display = ('date', 'telescope__id', 'instrument', 'target')
-    list_filter = ('telescope__id', 'telescope__site__name', 'telescope__site__observatory__name', 'instrument__name')
+    list_filter = ('telescope__id', 'telescope__site__name', 'telescope__site__observatory__name', 'instrument__name', 'planned')
     search_fields = ('telescope__name', 'telescope__id', 'target', 'instrument__name')
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         if isinstance(db_field, PointField):

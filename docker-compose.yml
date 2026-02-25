@@ -13,11 +13,27 @@ services:
     networks:
       - heroic_net
 
+  redis:
+    image: redis:8.4
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: always
+    healthcheck:
+        test: ["CMD", "redis-cli", "ping"]
+        interval: 10s
+        timeout: 5s
+        retries: 30
+    expose:
+      - "6379"
+    networks:
+      - heroic_net
+    volumes:
+      - redis_data:/data
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
-    image: heroic-backend
+    image: heroic
     restart: always
     env_file:
       - .env
@@ -41,7 +57,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: heroic-ingestor
+    image: heroic
     command: ["python", "manage.py", "readstreams"]
     restart: always
     env_file:
@@ -56,6 +72,52 @@ services:
       - db
     volumes:
       - static_data:/app/static
+    networks:
+      - heroic_net
+
+  dramatiq_task_scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: heroic
+    env_file:
+      - .env
+    environment:
+      DB_HOST:     db
+      DB_PORT:     "5432"
+      DB_NAME:     "${DB_NAME}"
+      DB_USER:     "${DB_USER}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+    mem_limit: "512m"
+    restart: always
+    command: >
+      sh -c "python manage.py runscript heroic_base.task_scheduler"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - heroic_net
+
+  dramatiq_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: heroic
+    env_file:
+      - .env
+    environment:
+      DB_HOST:     db
+      DB_PORT:     "5432"
+      DB_NAME:     "${DB_NAME}"
+      DB_USER:     "${DB_USER}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+    mem_limit: "512m"
+    restart: always
+    command: >
+      sh -c "python manage.py rundramatiq --processes 1 --threads 2"
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - heroic_net
 
@@ -74,6 +136,7 @@ services:
 
 volumes:
   heroic_data:
+  redis_data:
   static_data:
 
 networks:

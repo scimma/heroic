@@ -1,9 +1,13 @@
 import django_filters
 from django import forms
-from django.contrib.gis.geos import Point, Polygon
+from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
 from datetime import timezone
 from dateutil.parser import parse
+from django.contrib.gis.geos import Point
+from django.contrib.gis.db.models import F
+from django.contrib.gis.db.models.functions import Translate
+from django.db.models import FloatField, ExpressionWrapper, Func
 
 from heroic_api.models import (Telescope, TelescopeStatus, Instrument, InstrumentCapability, TelescopePointing,
                                PlannedTelescopeStatus, PlannedInstrumentCapability, Site, Observatory)
@@ -32,7 +36,7 @@ class InstrumentFilter(django_filters.FilterSet):
 
     class Meta:
         model = Instrument
-        exclude = ['instrument_url']
+        exclude = ['instrument_url', 'footprint']
 
 
 class BaseTelescopeStatusFilter(django_filters.FilterSet):
@@ -126,13 +130,16 @@ class TelescopePointingFilter(django_filters.FilterSet):
     observatory = django_filters.CharFilter(field_name='telescope__site__observatory__id')
     telescope = django_filters.CharFilter(field_name='telescope__id')
     instrument = django_filters.CharFilter(field_name='instrument__id')
+    planned = django_filters.BooleanFilter(field_name='planned')
     target = django_filters.CharFilter(field_name='target', lookup_expr='icontainer', label='Target name contains')
     target_exact = django_filters.CharFilter(field_name='target', lookup_expr='exact', label='Target name exact')
     cone_search = django_filters.CharFilter(method='filter_cone_search', label='Cone Search',
-                                            help_text='RA, Dec, Radius (degrees)')
-    polygon_search = django_filters.CharFilter(
-        method='filter_polygon_search',
-        label='Polygon Search',
+                                            help_text='RA, Dec (degrees)')
+    fov_search = django_filters.CharFilter(method='filter_fov_search', label='FOV Search',
+                                            help_text='Comma delimited coordinates: "RA,Dec"')
+    field_search = django_filters.CharFilter(
+        method='filter_field_search',
+        label='Field Search',
         help_text='Comma-separated pairs of space-delimited coordinates (degrees).'
     )
     start = django_filters.CharFilter(
@@ -157,22 +164,39 @@ class TelescopePointingFilter(django_filters.FilterSet):
         dec = float(dec)
 
         radius_meters = 2 * math.pi * EARTH_RADIUS_METERS * float(radius) / 360
+        
 
         return queryset.filter(coordinate__distance_lte=(Point(ra, dec), D(m=radius_meters)))
 
-    def filter_polygon_search(self, queryset, name, value):
-        ''' Polygon search is expected in the form "x1 y1, x2 y2, etc." for however many points the polygon has
-            The polygon specified should be a closed shape such that the last coordinate given closed the polygon
-            connecting back to the first coordinate.
+    def filter_fov_search(self, queryset, name, value):
+        ''' The FOV search takes in a coordinate of the form "RA,Dec" and returns a set of pointings where it is within the
+            instruments FOV. This uses the instruments 'footprint' + pointings 'coordinate' to do the lookup
         '''
-        value += ', ' + value.split(', ', 1)[0]
-        vertices = tuple((float(v.split(' ')[0]), float(v.split(' ')[1])) for v in value.split(', '))
-        polygon = Polygon(vertices, srid=4035)
-        return queryset.filter(coordinate__within=polygon)
+        ra, dec = value.split(',')
+        ra = float(ra)
+        dec = float(dec)
+        polygon_queryset = queryset.alias(
+            x=ExpressionWrapper(Func('coordinate', function='ST_X'), output_field=FloatField()),
+            y=ExpressionWrapper(Func('coordinate', function='ST_Y'), output_field=FloatField()),
+        ).alias(
+            fov=Translate('instrument__footprint', F('x'), F('y'))
+        ).filter(fov__contains=Point(ra, dec))
+        return polygon_queryset
+    
+    def filter_field_search(self, queryset, name, value):
+        ''' The FOV search takes in a coordinate of the form "RA,Dec" and returns a set of pointings where it is within the
+            instruments FOV. This uses the internal 'field' to do the lookup efficiently
+        '''
+        ra, dec = value.split(',')
+        ra = float(ra)
+        dec = float(dec)
+        field_queryset = queryset.filter(field__contains=Point(ra, dec, srid=4326))
+        
+        return field_queryset
 
     class Meta:
         model = TelescopePointing
-        exclude = ['extra', 'coordinate', 'date']
+        exclude = ['extra', 'coordinate', 'date', 'field']
 
 
 class BaseInstrumentCapabilityFilter(django_filters.FilterSet):
