@@ -90,6 +90,7 @@ services:
       DB_PASSWORD: "${DB_PASSWORD}"
     mem_limit: "512m"
     restart: always
+    entrypoint: []
     command: >
       sh -c "python manage.py runscript heroic_base.task_scheduler"
     depends_on:
@@ -113,6 +114,7 @@ services:
       DB_PASSWORD: "${DB_PASSWORD}"
     mem_limit: "512m"
     restart: always
+    entrypoint: []
     command: >
       sh -c "python manage.py rundramatiq --processes 1 --threads 2"
     depends_on:
