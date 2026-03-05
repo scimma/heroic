@@ -92,7 +92,7 @@ services:
     restart: always
     entrypoint: []
     command: >
-      sh -c "python manage.py runscript heroic_base.task_scheduler"
+      sh -c "poetry run python manage.py runscript heroic_base.task_scheduler"
     depends_on:
       redis:
         condition: service_healthy
@@ -116,7 +116,7 @@ services:
     restart: always
     entrypoint: []
     command: >
-      sh -c "python manage.py rundramatiq --processes 1 --threads 2"
+      sh -c "poetry run python manage.py rundramatiq --processes 1 --threads 2"
     depends_on:
       redis:
         condition: service_healthy
