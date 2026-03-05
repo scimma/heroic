@@ -22,15 +22,17 @@ def poll_rubin_schedule():
         telescope = Telescope.objects.get(id=RUBIN_TELESCOPE_ID)
     except Telescope.DoesNotExist:
         logger.error(f"Cannot poll Rubin schedule: Rubin telescope {RUBIN_TELESCOPE_ID} is not defined")
+        return
     try:
         instrument = Instrument.objects.get(id=RUBIN_INSTRUMENT_ID)
     except Instrument.DoesNotExist:
         logger.error(f"Cannot poll Rubin schedule: Rubin instrument {RUBIN_INSTRUMENT_ID} is not defined")
+        return
     
     # Get the schedule from 15 minutes in the past until 25 hours later
     start = datetime.now() - timedelta(minutes=15)
-    logger.info(f'Getting the Rubin schedule starting at {start.isoformat()}')
-    params = {'time': '25', 'start': start.isoformat()}
+    logger.info(f'Getting the Rubin schedule starting at {start.strftime('%Y-%m-%d %H:%M:%S')}')
+    params = {'time': '25', 'start': start.strftime('%Y-%m-%d %H:%M:%S')}
     response = requests.get(settings.RUBIN_SCHEDULE_URL, params=params)
     response.raise_for_status()
 
