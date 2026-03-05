@@ -1,0 +1,332 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - development
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set deployment environment
+        id: set-env
+        run: |
+          # Check if this is a tag push (production) or branch push (development)
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "ENVIRONMENT=production" >> $GITHUB_OUTPUT
+            echo "SSH_HOST=${{ secrets.PROD_SSH_HOST }}" >> $GITHUB_OUTPUT
+            echo "SSH_USER=${{ secrets.PROD_SSH_USER }}" >> $GITHUB_OUTPUT
+            echo "SSH_KEY=${{ secrets.PROD_SSH_KEY }}" >> $GITHUB_OUTPUT
+            echo "ENV_FILE=${{ secrets.PROD_ENV_FILE }}" >> $GITHUB_OUTPUT
+            echo "DEPLOY_PATH=/home/exouser/heroic" >> $GITHUB_OUTPUT
+            echo "FRONTEND_PATH=/home/exouser/heroic-frontend" >> $GITHUB_OUTPUT
+            echo "BACKUP_PATH=/home/exouser/backups/backend" >> $GITHUB_OUTPUT
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "ENVIRONMENT=development" >> $GITHUB_OUTPUT
+            echo "SSH_HOST=${{ secrets.DEV_SSH_HOST }}" >> $GITHUB_OUTPUT
+            echo "SSH_USER=${{ secrets.DEV_SSH_USER }}" >> $GITHUB_OUTPUT
+            echo "SSH_KEY=${{ secrets.DEV_SSH_KEY }}" >> $GITHUB_OUTPUT
+            echo "ENV_FILE=${{ secrets.DEV_ENV_FILE }}" >> $GITHUB_OUTPUT
+            echo "DEPLOY_PATH=/home/exouser/heroic" >> $GITHUB_OUTPUT
+            echo "FRONTEND_PATH=/home/exouser/heroic-frontend" >> $GITHUB_OUTPUT
+            echo "BACKUP_PATH=/home/exouser/backups/backend" >> $GITHUB_OUTPUT
+            echo "VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          # Write SSH key to file (GitHub automatically masks secret values in logs)
+          cat > ~/.ssh/deploy_key << 'EOFKEY'
+          ${{ steps.set-env.outputs.SSH_KEY }}
+          EOFKEY
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ steps.set-env.outputs.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create backup before deployment
+        id: backup
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ steps.set-env.outputs.SSH_USER }}@${{ steps.set-env.outputs.SSH_HOST }} << 'ENDSSH'
+            set -e
+
+            echo "================================================"
+            echo " CREATING BACKUP"
+            echo "================================================"
+            
+            # Create backup directory
+            mkdir -p ${{ steps.set-env.outputs.BACKUP_PATH }}
+
+            cd ${{ steps.set-env.outputs.DEPLOY_PATH }}
+            
+            # Create timestamped backup name
+            BACKUP_NAME="backup_$(date +%Y%m%d_%H%M%S)"
+            echo "Creating backup: $BACKUP_NAME"
+
+            # Save current version/tag if it exists
+            if [ -f ".deployed_version" ]; then
+              CURRENT_VERSION=$(cat .deployed_version)
+              echo "Current deployed version: $CURRENT_VERSION"
+              echo "$CURRENT_VERSION" > "${{ steps.set-env.outputs.BACKUP_PATH }}/${BACKUP_NAME}_version.txt"
+            fi
+
+            # Save current git commit
+            echo "Saving git commit hash..."
+            git rev-parse HEAD > "${{ steps.set-env.outputs.BACKUP_PATH }}/${BACKUP_NAME}_commit.txt"
+
+            # Backup database
+            echo "Backing up database..."
+            docker compose exec -T db pg_dump -U postgres heroic > "${{ steps.set-env.outputs.BACKUP_PATH }}/${BACKUP_NAME}_db.sql" 2>/dev/null || echo "⚠️  Database backup skipped (container may not be running)"
+
+            # Save backup name for potential rollback
+            echo "$BACKUP_NAME" > "${{ steps.set-env.outputs.BACKUP_PATH }}/LATEST_BACKUP.txt"
+
+            echo "✅ Backup created: $BACKUP_NAME"
+            echo "   Location: ${{ steps.set-env.outputs.BACKUP_PATH }}/"
+
+            # Keep only last 10 backups
+            echo "Cleaning old backups (keeping last 10)..."
+            cd ${{ steps.set-env.outputs.BACKUP_PATH }}
+            ls -t backup_*_commit.txt 2>/dev/null | tail -n +11 | while read file; do
+              BASE_NAME="${file%_commit.txt}"
+              rm -f "${BASE_NAME}_commit.txt" "${BASE_NAME}_db.sql" "${BASE_NAME}_version.txt"
+              echo "   Removed: $BASE_NAME"
+            done
+
+            echo "================================================"
+          ENDSSH
+
+      - name: Deploy Backend to server
+        id: deploy
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ steps.set-env.outputs.SSH_USER }}@${{ steps.set-env.outputs.SSH_HOST }} << 'ENDSSH'
+            set -e
+
+            echo "================================================"
+            echo " BACKEND DEPLOYMENT - ${{ steps.set-env.outputs.ENVIRONMENT }}"
+            echo " VERSION: ${{ steps.set-env.outputs.VERSION }}"
+            echo "================================================"
+
+            echo ""
+            echo "1. Stopping frontend containers..."
+            cd ${{ steps.set-env.outputs.FRONTEND_PATH }}
+            docker compose down
+            echo "✅ Frontend stopped"
+
+            echo ""
+            echo "2. Stopping backend containers..."
+            cd ${{ steps.set-env.outputs.DEPLOY_PATH }}
+            docker compose down
+            echo "✅ Backend stopped"
+
+            echo ""
+            echo "3. Pulling latest backend code..."
+            git fetch origin --tags
+
+            if [[ "${{ steps.set-env.outputs.ENVIRONMENT }}" == "production" ]]; then
+              git checkout ${{ steps.set-env.outputs.VERSION }}
+              echo "✅ Code updated to version: ${{ steps.set-env.outputs.VERSION }}"
+            else
+              git checkout development
+              git pull origin development
+              echo "✅ Code updated to commit: $(git rev-parse --short HEAD)"
+            fi
+
+            # Save deployed version
+            echo "${{ steps.set-env.outputs.VERSION }}" > .deployed_version
+
+            echo ""
+            echo "4.1. Updating backend environment variables..."
+            # Use cat with heredoc to avoid exposing secrets in process list
+            cat > .env << 'EOFENV'
+            ${{ steps.set-env.outputs.ENV_FILE }}
+            EOFENV
+            echo "✅ Environment updated"
+
+            echo ""
+            echo "4.2. Deploying nginx configuration..."
+            if [[ "${{ steps.set-env.outputs.ENVIRONMENT }}" == "production" ]]; then
+              cp deploy/nginx.prod.conf deploy/nginx.conf
+              echo "✅ Using production nginx configuration"
+            else
+              cp deploy/nginx.dev.conf deploy/nginx.conf
+              echo "✅ Using development nginx configuration"
+            fi
+
+            echo ""
+            echo "5. Building and starting backend services..."
+            docker compose build --no-cache backend
+            docker compose up -d
+            echo "✅ Backend started"
+
+            echo ""
+            echo "6. Waiting for backend to be ready..."
+            sleep 15
+
+            # Check if backend is actually running
+            if ! docker compose ps | grep -q "backend.*Up"; then
+              echo "❌ Backend containers failed to start!"
+              docker compose ps
+              docker compose logs --tail=50 backend
+              exit 1
+            fi
+            echo "✅ Backend ready"
+
+            echo ""
+            echo "7. Restarting frontend services..."
+            cd ${{ steps.set-env.outputs.FRONTEND_PATH }}
+            docker compose up -d
+            echo "✅ Frontend started"
+
+            echo ""
+            echo "================================================"
+            echo " DEPLOYMENT STATUS"
+            echo "================================================"
+            echo ""
+            echo "Deployed Version: ${{ steps.set-env.outputs.VERSION }}"
+            echo ""
+            echo "Backend containers:"
+            cd ${{ steps.set-env.outputs.DEPLOY_PATH }}
+            docker compose ps
+            echo ""
+            echo "Frontend containers:"
+            cd ${{ steps.set-env.outputs.FRONTEND_PATH }}
+            docker compose ps
+            echo ""
+            echo "✅ BACKEND DEPLOYMENT COMPLETE!"
+            echo "================================================"
+          ENDSSH
+
+      - name: Health Check
+        id: health_check
+        if: success()
+        run: |
+          echo "Running health checks..."
+          
+          # Determine the URL based on environment
+          if [[ "${{ steps.set-env.outputs.ENVIRONMENT }}" == "production" ]]; then
+            URL="https://heroic.scimma.org"
+          else
+            URL="https://dev.heroic.scimma.org"
+          fi
+          
+          MAX_RETRIES=10
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # Check if site is accessible
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+            
+            if [[ "$HTTP_CODE" == "200" ]] || [[ "$HTTP_CODE" == "302" ]]; then
+              echo "✅ Health check passed! Site returned HTTP $HTTP_CODE"
+              exit 0
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "Attempt $RETRY_COUNT/$MAX_RETRIES: HTTP $HTTP_CODE - retrying in 5s..."
+            sleep 5
+          done
+          
+          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          echo "Last HTTP code: $HTTP_CODE"
+          exit 1
+
+      - name: Rollback on Failure
+        if: failure() && (steps.deploy.conclusion == 'failure' || steps.health_check.conclusion == 'failure')
+        run: |
+          echo "================================================"
+          echo " INITIATING ROLLBACK"
+          echo "================================================"
+          
+          ssh -i ~/.ssh/deploy_key ${{ steps.set-env.outputs.SSH_USER }}@${{ steps.set-env.outputs.SSH_HOST }} << 'ENDSSH'
+            set -e
+            
+            # Get the latest backup name
+            BACKUP_NAME=$(cat ${{ steps.set-env.outputs.BACKUP_PATH }}/LATEST_BACKUP.txt 2>/dev/null || echo "")
+            
+            if [ -z "$BACKUP_NAME" ]; then
+              echo "❌ No backup found to rollback to!"
+              exit 1
+            fi
+            
+            echo "Rolling back to backup: $BACKUP_NAME"
+            
+            # Get version from backup if it exists
+            if [ -f "${{ steps.set-env.outputs.BACKUP_PATH }}/${BACKUP_NAME}_version.txt" ]; then
+              PREVIOUS_VERSION=$(cat "${{ steps.set-env.outputs.BACKUP_PATH }}/${BACKUP_NAME}_version.txt")
+              echo "   Version: $PREVIOUS_VERSION"
+            fi
+            
+            # Get commit hash from backup
+            COMMIT_HASH=$(cat "${{ steps.set-env.outputs.BACKUP_PATH }}/${BACKUP_NAME}_commit.txt")
+            echo "   Commit: $COMMIT_HASH"
+
+            echo ""
+            echo "Stopping frontend..."
+            cd ${{ steps.set-env.outputs.FRONTEND_PATH }}
+            docker compose down
+
+            echo "Stopping backend..."
+            cd ${{ steps.set-env.outputs.DEPLOY_PATH }}
+            docker compose down
+
+            echo "Restoring code to commit: $COMMIT_HASH"
+            git checkout $COMMIT_HASH
+            
+            # Restore version file if it exists
+            if [ -f "${{ steps.set-env.outputs.BACKUP_PATH }}/${BACKUP_NAME}_version.txt" ]; then
+              cp "${{ steps.set-env.outputs.BACKUP_PATH }}/${BACKUP_NAME}_version.txt" .deployed_version
+            fi
+
+            if [ -f "${{ steps.set-env.outputs.BACKUP_PATH }}/${BACKUP_NAME}_db.sql" ]; then
+              echo "Restoring database..."
+              docker compose up -d db
+              sleep 10
+              cat "${{ steps.set-env.outputs.BACKUP_PATH }}/${BACKUP_NAME}_db.sql" | docker compose exec -T db psql -U postgres heroic
+              docker compose down
+            fi
+
+            echo "Starting backend..."
+            docker compose build --no-cache backend
+            docker compose up -d
+            sleep 10
+
+            echo "Starting frontend..."
+            cd ${{ steps.set-env.outputs.FRONTEND_PATH }}
+            docker compose up -d
+            
+            echo ""
+            echo "✅ ROLLBACK COMPLETE!"
+            echo "   Restored to: $BACKUP_NAME"
+            if [ -n "$PREVIOUS_VERSION" ]; then
+              echo "   Version: $PREVIOUS_VERSION"
+            fi
+            echo "   Commit: $COMMIT_HASH"
+            echo ""
+            echo "Current status:"
+            cd ${{ steps.set-env.outputs.DEPLOY_PATH }}
+            docker compose ps
+          ENDSSH
+          
+          echo "================================================"
+          echo " DEPLOYMENT FAILED - SYSTEM ROLLED BACK"
+          echo "================================================"
+
+      - name: Deployment notification
+        if: always()
+        run: |
+          if [[ "${{ job.status }}" == "success" ]]; then
+            echo "✅ Successfully deployed backend to ${{ steps.set-env.outputs.ENVIRONMENT }}"
+            echo " Version: ${{ steps.set-env.outputs.VERSION }}"
+          else
+            echo "❌ Backend deployment to ${{ steps.set-env.outputs.ENVIRONMENT }} failed"
+            echo " Automatic rollback was attempted"
+            exit 1
+          fi
