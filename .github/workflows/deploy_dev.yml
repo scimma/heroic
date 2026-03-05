@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout (for traceability)
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Prepare SSH
@@ -22,11 +22,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          # Write multi-line key safely
-          cat > ~/.ssh/id_deploy <<'EOF'
+          cat > ~/.ssh/id_deploy <<'SSHEOF'
           ${{ secrets.DEV_SSH_KEY }}
-          EOF
-          # Fix CRLF if secret was pasted with Windows line endings
+          SSHEOF
           tr -d '\r' < ~/.ssh/id_deploy > ~/.ssh/id_deploy.clean
           mv ~/.ssh/id_deploy.clean ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
@@ -36,31 +34,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes \
-            "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}" \
-            "echo ok-from-$(hostname)"
+          ssh -i ~/.ssh/id_deploy \
+              -o IdentitiesOnly=yes \
+              -o BatchMode=yes \
+              "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}" \
+              "echo ok-from-\$(hostname)"
 
-      - name: Upload .env to DEV
+      - name: Upload .env
         shell: bash
         run: |
           set -euo pipefail
-          # Write multi-line .env safely (same multiline-secret issue)
-          cat > .env <<'EOF'
+          cat > .env <<'ENVEOF'
           ${{ secrets.DEV_ENV_FILE }}
-          EOF
+          ENVEOF
           tr -d '\r' < .env > .env.clean
           mv .env.clean .env
-          scp -i ~/.ssh/id_deploy -o IdentitiesOnly=yes .env \
-            "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}:/home/${{ secrets.DEV_SSH_USER }}/heroic/.env"
+          scp -i ~/.ssh/id_deploy \
+              -o IdentitiesOnly=yes \
+              .env \
+              "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}:/home/${{ secrets.DEV_SSH_USER }}/heroic/.env"
           rm -f .env
 
-      - name: Deploy on DEV VM
+      - name: Deploy
         shell: bash
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes \
-            "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}" \
-            'bash -se' <<'REMOTE'
+          ssh -i ~/.ssh/id_deploy \
+              -o IdentitiesOnly=yes \
+              -o BatchMode=yes \
+              "${{ secrets.DEV_SSH_USER }}@${{ secrets.DEV_SSH_HOST }}" \
+              'bash -se' <<'REMOTE'
           set -euo pipefail
 
           DEPLOY_PATH="$HOME/heroic"
@@ -71,21 +74,33 @@ jobs:
           git checkout development
           git reset --hard origin/development
 
-          # Stop frontend first (your requirement)
           if [ -d "$FRONTEND_PATH" ]; then
             (cd "$FRONTEND_PATH" && docker compose down) || true
           fi
 
           docker compose -f docker-compose.yml -f docker-compose.dev.yml down --remove-orphans
           docker compose -f docker-compose.yml -f docker-compose.dev.yml build
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --entrypoint="" backend poetry run python manage.py migrate --noinput
           docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend poetry run python manage.py collectstatic --noinput
 
-          # Optional-but-recommended: apply migrations + collect static
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend python manage.py migrate --noinput
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend python manage.py collectstatic --noinput
-
-          # Bring frontend back (no rebuild here—frontend repo deploys itself)
           if [ -d "$FRONTEND_PATH" ]; then
             (cd "$FRONTEND_PATH" && docker compose up -d) || true
           fi
           REMOTE
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 12); do
+            STATUS=$(curl -sk -o /dev/null -w "%{http_code}" https://dev.heroic.scimma.org/api/observatories/ || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Smoke test passed (HTTP 200)"
+              exit 0
+            fi
+            echo "Attempt $i: got HTTP $STATUS, retrying in 10s..."
+            sleep 10
+          done
+          echo "Smoke test failed after 2 minutes"
+          exit 1

@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout (for traceability)
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Prepare SSH
@@ -22,24 +22,48 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          printf "%s" "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/id_deploy
+          cat > ~/.ssh/id_deploy <<'SSHEOF'
+          ${{ secrets.PROD_SSH_KEY }}
+          SSHEOF
+          tr -d '\r' < ~/.ssh/id_deploy > ~/.ssh/id_deploy.clean
+          mv ~/.ssh/id_deploy.clean ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           ssh-keyscan -H "${{ secrets.PROD_SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Upload .env to PROD
+      - name: SSH sanity check
         shell: bash
         run: |
           set -euo pipefail
-          printf "%s" "${{ secrets.PROD_ENV_FILE }}" > .env
-          scp -i ~/.ssh/id_deploy .env "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:/home/${{ secrets.PROD_SSH_USER }}/heroic/.env"
+          ssh -i ~/.ssh/id_deploy \
+              -o IdentitiesOnly=yes \
+              -o BatchMode=yes \
+              "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
+              "echo ok-from-\$(hostname)"
+
+      - name: Upload .env
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > .env <<'ENVEOF'
+          ${{ secrets.PROD_ENV_FILE }}
+          ENVEOF
+          tr -d '\r' < .env > .env.clean
+          mv .env.clean .env
+          scp -i ~/.ssh/id_deploy \
+              -o IdentitiesOnly=yes \
+              .env \
+              "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:/home/${{ secrets.PROD_SSH_USER }}/heroic/.env"
           rm -f .env
 
-      - name: Deploy on PROD VM
+      - name: Deploy
         shell: bash
         run: |
           set -euo pipefail
-
-          ssh -i ~/.ssh/id_deploy "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" 'bash -se' <<'REMOTE'
+          ssh -i ~/.ssh/id_deploy \
+              -o IdentitiesOnly=yes \
+              -o BatchMode=yes \
+              "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
+              'bash -se' <<'REMOTE'
           set -euo pipefail
 
           DEPLOY_PATH="$HOME/heroic"
@@ -51,19 +75,33 @@ jobs:
           git checkout main
           git reset --hard origin/main
 
-          # Stop frontend first (your requirement)
           if [ -d "$FRONTEND_PATH" ]; then
             (cd "$FRONTEND_PATH" && docker compose down) || true
           fi
 
           docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans
           docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint="" backend poetry run python manage.py migrate --noinput
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend python manage.py migrate --noinput
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend python manage.py collectstatic --noinput
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend poetry run python manage.py collectstatic --noinput
 
           if [ -d "$FRONTEND_PATH" ]; then
             (cd "$FRONTEND_PATH" && docker compose up -d) || true
           fi
           REMOTE
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 12); do
+            STATUS=$(curl -sk -o /dev/null -w "%{http_code}" https://heroic.scimma.org/api/observatories/ || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Smoke test passed (HTTP 200)"
+              exit 0
+            fi
+            echo "Attempt $i: got HTTP $STATUS, retrying in 10s..."
+            sleep 10
+          done
+          echo "Smoke test failed after 2 minutes"
+          exit 1
