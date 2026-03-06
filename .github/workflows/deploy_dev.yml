@@ -81,10 +81,13 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.dev.yml down --remove-orphans
           docker compose -f docker-compose.yml -f docker-compose.dev.yml build
           docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+          sleep 20
+          
           docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend poetry run python manage.py collectstatic --noinput
 
           if [ -d "$FRONTEND_PATH" ]; then
-            (cd "$FRONTEND_PATH" && docker compose up -d) || true
+            (cd "$FRONTEND_PATH" && docker compose up --no-build -d) || true
           fi
           REMOTE
 
