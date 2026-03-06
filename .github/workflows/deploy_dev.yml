@@ -80,7 +80,7 @@ jobs:
           pwd
 
           if [ -d "$FRONTEND_PATH" ]; then
-            (cd "$FRONTEND_PATH" && docker compose down) || true
+            (cd "$FRONTEND_PATH" && pwd && docker compose down) || true
           fi
 
           pwd
