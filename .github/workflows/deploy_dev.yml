@@ -80,7 +80,6 @@ jobs:
 
           docker compose -f docker-compose.yml -f docker-compose.dev.yml down --remove-orphans
           docker compose -f docker-compose.yml -f docker-compose.dev.yml build
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --entrypoint="" backend poetry run python manage.py migrate --noinput
           docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
           docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend poetry run python manage.py collectstatic --noinput
 
