@@ -69,6 +69,7 @@ jobs:
           DEPLOY_PATH="$HOME/heroic"
           FRONTEND_PATH="$HOME/heroic-frontend"
 
+          echo $FRONTEND_PATH
           pwd
 
           cd "$DEPLOY_PATH"
