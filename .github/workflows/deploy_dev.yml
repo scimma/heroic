@@ -69,35 +69,27 @@ jobs:
           DEPLOY_PATH="$HOME/heroic"
           FRONTEND_PATH="$HOME/heroic-frontend"
 
-          echo $FRONTEND_PATH
-          pwd
-
           cd "$DEPLOY_PATH"
           git fetch origin --prune
           git checkout development
           git reset --hard origin/development
 
-          pwd
-
           if [ -d "$FRONTEND_PATH" ]; then
-            (cd "$FRONTEND_PATH" && pwd && docker compose down) || true
+            (cd "$FRONTEND_PATH" && docker compose down) || true
           fi
-
-          pwd
 
           docker compose -f docker-compose.yml -f docker-compose.dev.yml down --remove-orphans
           docker compose -f docker-compose.yml -f docker-compose.dev.yml build
           docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
-          pwd
+          if [ -d "$FRONTEND_PATH" ]; then
+            (cd "$FRONTEND_PATH" && docker compose up --no-build -d) || true
+          fi
 
           sleep 20
 
           docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend poetry run python manage.py collectstatic --noinput
 
-          if [ -d "$FRONTEND_PATH" ]; then
-            (cd "$FRONTEND_PATH" && docker compose up --no-build -d) || true
-          fi
           REMOTE
 
       - name: Smoke test
