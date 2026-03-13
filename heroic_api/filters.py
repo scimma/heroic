@@ -21,8 +21,8 @@ EARTH_RADIUS_METERS = 6371008.77141506
 
 
 class TelescopeFilter(django_filters.FilterSet):
-    site = django_filters.CharFilter(field_name='site__id')
-    observatory = django_filters.CharFilter(field_name='site__observatory__id')
+    site = django_filters.ModelMultipleChoiceFilter(queryset=Site.objects.all(), field_name='site__id', to_field_name='id')
+    observatory = django_filters.ModelMultipleChoiceFilter(queryset=Observatory.objects.all(), field_name='site__observatory__id', to_field_name='id')
 
     class Meta:
         model = Telescope
@@ -30,9 +30,9 @@ class TelescopeFilter(django_filters.FilterSet):
 
 
 class InstrumentFilter(django_filters.FilterSet):
-    site = django_filters.CharFilter(field_name='telescope__site__id')
-    observatory = django_filters.CharFilter(field_name='telescope__site__observatory__id')
-    telescope = django_filters.CharFilter(field_name='telescope__id')
+    site = django_filters.ModelMultipleChoiceFilter(queryset=Site.objects.all(), field_name='telescope__site__id', to_field_name='id')
+    observatory = django_filters.ModelMultipleChoiceFilter(queryset=Observatory.objects.all(), field_name='telescope__site__observatory__id', to_field_name='id')
+    telescope = django_filters.ModelMultipleChoiceFilter(queryset=Telescope.objects.all(), field_name='telescope__id', to_field_name='id')
 
     class Meta:
         model = Instrument
@@ -126,10 +126,10 @@ class PlannedTelescopeStatusFilter(BaseTelescopeStatusFilter):
 
 
 class TelescopePointingFilter(django_filters.FilterSet):
-    site = django_filters.CharFilter(field_name='telescope__site__id')
-    observatory = django_filters.CharFilter(field_name='telescope__site__observatory__id')
-    telescope = django_filters.CharFilter(field_name='telescope__id')
-    instrument = django_filters.CharFilter(field_name='instrument__id')
+    site = django_filters.ModelMultipleChoiceFilter(queryset=Site.objects.all(), field_name='telescope__site__id', to_field_name='id')
+    observatory = django_filters.ModelMultipleChoiceFilter(queryset=Observatory.objects.all(), field_name='telescope__site__observatory__id', to_field_name='id')
+    telescope = django_filters.ModelMultipleChoiceFilter(queryset=Telescope.objects.all(), field_name='telescope__id', to_field_name='id')
+    instrument = django_filters.ModelMultipleChoiceFilter(queryset=Instrument.objects.all(), field_name='instrument__id', to_field_name='id')
     planned = django_filters.BooleanFilter(field_name='planned')
     target = django_filters.CharFilter(field_name='target', lookup_expr='icontainer', label='Target name contains')
     target_exact = django_filters.CharFilter(field_name='target', lookup_expr='exact', label='Target name exact')
@@ -153,6 +153,13 @@ class TelescopePointingFilter(django_filters.FilterSet):
         lookup_expr='lt',
         label='Date Before',
         widget=forms.TextInput(attrs={'class': 'input', 'type': 'date'})
+    )
+    ordering = django_filters.OrderingFilter(
+        fields=(
+            ('date', 'date'),
+            ('telescope', 'telescope'),
+            ('instrument', 'instrument')
+        )
     )
 
     def filter_cone_search(self, queryset, name, value):
