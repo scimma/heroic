@@ -30,10 +30,7 @@ services:
       - redis_data:/data
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: heroic
+    image: ${HEROIC_IMAGE:-heroic}
     restart: always
     env_file:
       - .env
@@ -54,10 +51,7 @@ services:
       - heroic_net
 
   ingestor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: heroic
+    image: ${HEROIC_IMAGE:-heroic}
     command: ["python", "manage.py", "readstreams"]
     restart: always
     env_file:
@@ -76,10 +70,7 @@ services:
       - heroic_net
 
   dramatiq_task_scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: heroic
+    image: ${HEROIC_IMAGE:-heroic}
     env_file:
       - .env
     environment:
@@ -100,10 +91,7 @@ services:
       - heroic_net
 
   dramatiq_worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: heroic
+    image: ${HEROIC_IMAGE:-heroic}
     env_file:
       - .env
     environment:
