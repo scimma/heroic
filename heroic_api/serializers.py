@@ -518,6 +518,60 @@ class TelescopeDarkIntervalResponseSerializer(serializers.Serializer):
         child=serializers.DateTimeField(), min_length=2, max_length=2), allow_empty=True)
 
 
+class SkyMapVisibilityQuerySerializer(serializers.Serializer):
+    """ Serializer for queries for a healpix skymap of visibility
+
+    Takes either a list of telescopes, or assumes all if none is provided
+    Takes in start/end times
+    Returns healpix RING scheme map of fractional visibility within the time range
+    """
+    NSIDE_CHOICES = [
+        (32, 'Low Resolution'),
+        (64, 'Medium Resolution'),
+        (128, 'High Resolution'),
+    ]
+    telescopes = serializers.SlugRelatedField(
+        slug_field='id', queryset=Telescope.objects.all(), many=True, required=False, allow_null=True
+    )
+    start = serializers.DateTimeField(required=True)
+    end = serializers.DateTimeField(required=True)
+    nside = serializers.ChoiceField(required=False, default=64, choices=NSIDE_CHOICES,
+                                    help_text='Output healpix grid RING scheme resolution parameter (corresponds to 12 * nside^2 pixels)')
+    event_id = serializers.CharField(required=False, help_text='GraceDB GW event ID to apply the 50/90 contours to the visibility skymap.')
+    time_resolution = serializers.IntegerField(required=False, default=30, min_value=10, max_value=300,
+                                             help_text='Time step between visibility samples in minutes. Defaults to 30 minute resolution.')
+    airmass = serializers.FloatField(required=False, default=2, min_value=1, max_value=10, help_text='Airmass limit for visibility skymap.')
+    bins = serializers.IntegerField(required=False, default=10, min_value=1, max_value=20,
+                                    help_text='Number of equal-width visibility bins over (0, 1] to group pixels into for the output MOC.')
+
+    def validate(self, data):
+        validated_data = super().validate(data)
+
+        # Validate start is < end time
+        if validated_data['start'] >= validated_data['end']:
+            raise serializers.ValidationError(
+                {'end': _('The end datetime must be greater than the start datetime')}
+            )
+
+        # If no specific telescopes were choosen, assume all will be used
+        if not validated_data.get('telescopes'):
+            validated_data['telescopes'] = list(Telescope.objects.all())
+
+        return validated_data
+
+
+class SkyMapVisibilitySubSerializer(serializers.Serializer):
+    max_order = serializers.IntegerField()
+    num_bins = serializers.IntegerField()
+    dark_hours = serializers.FloatField()
+    # MOC per visibility bin: bin upper-bound (e.g. "0.25") -> order-keyed MOC json
+    moc = serializers.DictField(child=serializers.DictField())
+
+
+class SkyMapVisibilityResponseSerializer(serializers.Serializer):
+    telescope_id = SkyMapVisibilitySubSerializer()
+
+
 class GWVisibilityQuerySerializer(serializers.Serializer):
     """Serializer for GW network visibility queries
     

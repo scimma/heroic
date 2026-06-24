@@ -3,6 +3,7 @@ from mixer.backend.django import mixer
 from django.contrib.auth.models import User
 from django.urls import reverse
 from datetime import datetime, timezone
+import numpy as np
 
 from heroic_api import models
 
@@ -312,3 +313,73 @@ class TestVisibilityAirmass(BaseVisibilityTestCase):
         airmasses = response.json()
         self.assertEqual(response.status_code, 200)
         self._compare_airmasses(expected_airmasses, airmasses)
+
+
+class TestSkyMapVisibility(BaseVisibilityTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.skymap_query = {
+            'start': datetime(2025, 3, 1).isoformat(),
+            'end': datetime(2025, 3, 2).isoformat(),
+            'nside': 32,
+        }
+
+    def _assert_valid_binned_moc(self, entry, expected_nside, expected_bins):
+        """Assert a per-telescope entry is a well-formed binned MOC."""
+        from mocpy import MOC
+        expected_order = str(int(np.log2(expected_nside)))
+        self.assertEqual(entry['max_order'], int(expected_order))
+        self.assertEqual(entry['num_bins'], expected_bins)
+        # Every bin key is an upper bound in (0, 1] aligned to the bin width,
+        # and each bin is order-keyed json that round-trips through MOCpy.
+        valid_upper_bounds = {f'{(i + 1) / expected_bins:.2f}' for i in range(expected_bins)}
+        for upper_bound, moc_json in entry['moc'].items():
+            self.assertIn(upper_bound, valid_upper_bounds)
+            self.assertGreater(len(moc_json), 0)
+            for order, ipix in moc_json.items():
+                self.assertIsInstance(ipix, list)
+                # MOC compaction can roll cells up, but never below the map order
+                self.assertLessEqual(int(order), int(expected_order))
+            # round-trips back into a usable MOC
+            self.assertIsInstance(MOC.from_json(moc_json), MOC)
+
+    def test_skymap_binned_moc_succeeds(self):
+        query = self.skymap_query.copy()
+        query['telescopes'] = [self.telescope.id]
+        query['bins'] = 4
+        response = self.client.get(reverse('api:visibility-skymap'), data=query)
+        self.assertEqual(response.status_code, 200)
+        skymap_by_telescope = response.json()
+        self.assertEqual(list(skymap_by_telescope.keys()), [self.telescope.id])
+        entry = skymap_by_telescope[self.telescope.id]
+        self._assert_valid_binned_moc(entry, expected_nside=32, expected_bins=4)
+        # A telescope sees a good fraction of the sky over a full day, so at
+        # least one visibility bin should contain cells.
+        self.assertTrue(any(entry['moc'].values()))
+
+    def test_skymap_binned_moc_defaults_to_ten_bins(self):
+        query = self.skymap_query.copy()
+        query['telescopes'] = [self.telescope.id]
+        response = self.client.get(reverse('api:visibility-skymap'), data=query)
+        self.assertEqual(response.status_code, 200)
+        entry = response.json()[self.telescope.id]
+        self._assert_valid_binned_moc(entry, expected_nside=32, expected_bins=10)
+
+    def test_skymap_filters_to_requested_telescope(self):
+        query = self.skymap_query.copy()
+        query['telescopes'] = [self.telescope2.id]
+        response = self.client.get(reverse('api:visibility-skymap'), data=query)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.json().keys()), [self.telescope2.id])
+
+    def test_skymap_all_telescopes_when_none_specified(self):
+        response = self.client.get(reverse('api:visibility-skymap'), data=self.skymap_query)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.json().keys()), {self.telescope.id, self.telescope2.id})
+
+    def test_skymap_end_before_start_fails(self):
+        query = self.skymap_query.copy()
+        query['start'], query['end'] = query['end'], query['start']
+        response = self.client.get(reverse('api:visibility-skymap'), data=query)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('end', response.json())

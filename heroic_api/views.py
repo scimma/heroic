@@ -9,12 +9,15 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from django.contrib.auth.models import User
 from django.views.generic import RedirectView
 from django.conf import settings
+import requests
 
 from heroic_api.serializers import (ProfileSerializer, TargetVisibilityQuerySerializer,
                                     TargetVisibilityIntervalResponseSerializer,
                                     TargetVisibilityAirmassResponseSerializer,
+                                    SkyMapVisibilityQuerySerializer, SkyMapVisibilityResponseSerializer,
                                     GWVisibilityQuerySerializer, GWVisibilityResponseSerializer)
-from heroic_api.visibility import get_rise_set_intervals_by_telescope_for_target, get_airmass_by_telescope_for_target
+from heroic_api.visibility import (get_rise_set_intervals_by_telescope_for_target, get_airmass_by_telescope_for_target,
+                                   get_skymap_fractional_visibility_by_telescope)
 from heroic_api.gw_calculations import calculate_gw_visibility_timeline
 from heroic_api.models import TelescopeStatus
 
@@ -35,8 +38,6 @@ class ProfileAPIView(RetrieveUpdateAPIView):
             'profile'
         )
         return qs.first().profile
-
-
 
 
 class TargetVisibilityAPIView(APIView):
@@ -138,6 +139,68 @@ class TargetAirmassAPIView(APIView):
     )
     def post(self, request):
         return self.get_airmass(request.data)
+
+
+class SkyMapVisibilityAPIView(APIView):
+    """ A API view to get healpix RING scheme fractional visibility maps for telescopes over a time range
+    """
+    serializer_class = SkyMapVisibilityQuerySerializer
+    example_response = {
+        'telescope_id': {
+            'nside': 64,
+            'ordering': 'RING',
+            'nsamples': 49152,
+            'skymap': [0.0, 0.23, 0.45, 0.55, 0.66]},
+        'telescope2_id': {
+            'nside': 64,
+            'ordering': 'RING',
+            'nsamples': 49152,
+            'skymap': [0.0, 0.23, 0.45, 0.55, 0.66]}
+    }
+
+    def get_visibility(self, data):
+        serializer = SkyMapVisibilityQuerySerializer(data=data)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            try:
+                if data.get('event_id'):
+                    response = requests.get(settings.TREASUREMAP_URL + f'api/v1/gw_contour?graceid={data['event_id']}')
+                    response.raise_for_status()
+                    data['event_contours'] = response.json()
+                skymap_visibility_by_telescope = get_skymap_fractional_visibility_by_telescope(data)
+                return Response(skymap_visibility_by_telescope, status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response({'error': repr(e)}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(
+        operation_id='query skymap visibility intervals',
+        parameters=[SkyMapVisibilityQuerySerializer],
+        responses={
+            200: OpenApiResponse(
+                response=SkyMapVisibilityResponseSerializer,
+                examples=[OpenApiExample(name='Success',
+                    value=example_response
+                )]
+           )
+        }
+    )
+    def get(self, request):
+        return self.get_visibility(request.query_params)
+
+    @extend_schema(
+        operation_id='query skymap visibility intervals (post)',
+        responses={
+            200: OpenApiResponse(
+                response=SkyMapVisibilityResponseSerializer,
+                examples=[OpenApiExample(name='Success',
+                    value=example_response
+                )]
+           )
+        })
+    def post(self, request):
+        return self.get_visibility(request.data)
 
 
 class LoginRedirectView(RedirectView):
