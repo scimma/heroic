@@ -537,7 +537,6 @@ class SkyMapVisibilityQuerySerializer(serializers.Serializer):
     end = serializers.DateTimeField(required=True)
     nside = serializers.ChoiceField(required=False, default=64, choices=NSIDE_CHOICES,
                                     help_text='Output healpix grid RING scheme resolution parameter (corresponds to 12 * nside^2 pixels)')
-    event_id = serializers.CharField(required=False, help_text='GraceDB GW event ID to apply the 50/90 contours to the visibility skymap.')
     time_resolution = serializers.IntegerField(required=False, default=30, min_value=10, max_value=300,
                                              help_text='Time step between visibility samples in minutes. Defaults to 30 minute resolution.')
     airmass = serializers.FloatField(required=False, default=2, min_value=1, max_value=10, help_text='Airmass limit for visibility skymap.')

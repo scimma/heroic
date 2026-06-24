@@ -169,8 +169,6 @@ SPECTACULAR_SETTINGS = {
     # OTHER SETTINGS
 }
 
-TREASUREMAP_URL = os.getenv('TREASUREMAP_URL', 'https://treasuremap.space/')
-
 RUBIN_SCHEDULE_URL = os.getenv('RUBIN_SCHEDULE_URL', 'https://usdf-rsp.slac.stanford.edu/obsloctap/schedule')
 
 HEROIC_FRONT_END_BASE_URL = os.getenv('HEROIC_FRONT_END_BASE_URL', 'http://127.0.0.1:5173/')

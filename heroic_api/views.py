@@ -163,10 +163,6 @@ class SkyMapVisibilityAPIView(APIView):
         if serializer.is_valid():
             data = serializer.validated_data
             try:
-                if data.get('event_id'):
-                    response = requests.get(settings.TREASUREMAP_URL + f'api/v1/gw_contour?graceid={data['event_id']}')
-                    response.raise_for_status()
-                    data['event_contours'] = response.json()
                 skymap_visibility_by_telescope = get_skymap_fractional_visibility_by_telescope(data)
                 return Response(skymap_visibility_by_telescope, status=status.HTTP_200_OK)
             except Exception as e:
