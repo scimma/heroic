@@ -15,8 +15,11 @@ logger = logging.getLogger(__name__)
 RUBIN_TELESCOPE_ID='noirlab.cp.rubin'
 RUBIN_INSTRUMENT_ID='noirlab.cp.rubin.lsstcam'
 
+# Timeouts for the rubin schedule service. It fails and hangs alot
+RUBIN_REQUEST_TIMEOUT = (30, 120)
 
-@dramatiq.actor()
+
+@dramatiq.actor(max_retries=5, min_backoff=5000, max_backoff=300000, time_limit=360000)
 def poll_rubin_schedule():
     try:
         telescope = Telescope.objects.get(id=RUBIN_TELESCOPE_ID)
@@ -33,7 +36,7 @@ def poll_rubin_schedule():
     start = datetime.now() - timedelta(minutes=15)
     logger.info(f'Getting the Rubin schedule starting at {start.strftime('%Y-%m-%d %H:%M:%S')}')
     params = {'time': '25', 'start': start.strftime('%Y-%m-%d %H:%M:%S')}
-    response = requests.get(settings.RUBIN_SCHEDULE_URL, params=params)
+    response = requests.get(settings.RUBIN_SCHEDULE_URL, params=params, timeout=RUBIN_REQUEST_TIMEOUT)
     response.raise_for_status()
 
     visits = response.json()

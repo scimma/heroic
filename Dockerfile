@@ -42,10 +42,8 @@ RUN chmod +x /usr/local/bin/wait-for-db.sh
 # Set environment variable
 ENV DJANGO_SETTINGS_MODULE=heroic_base.settings
 
-# Expose port and define default entrypoint
+# Expose port and define default entrypoint. With no command, wait-for-db.sh launches
+# Gunicorn by default; pass a command (via compose `command:`) to run it instead, e.g.
+# `python manage.py readstreams`.
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/wait-for-db.sh"]
-CMD poetry run gunicorn \
-     --workers $GUNICORN_WORKERS \
-     --bind 0.0.0.0:8000 \
-     heroic_base.wsgi:application
