@@ -55,7 +55,7 @@ def poll_rubin_schedule():
                 instrument=instrument,
                 coordinate=point,
                 target=visit['target_name'],
-                defaults={'planned': False, 'extra': {'exposure_time': visit['t_exptime']}}
+                defaults={'planned': False, 'field': point.buffer(visit['s_fov']/2.0), 'extra': {'exposure_time': visit['t_exptime']}}
             )
         elif date > (datetime.now(timezone.utc) - timedelta(minutes=1)):
             # If this is in the future, i.e. a scheduled / planned visit, then collect them up to bulk add
