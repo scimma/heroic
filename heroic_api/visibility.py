@@ -1,6 +1,7 @@
 from math import cos, radians
 from datetime import datetime, timedelta
 from django.utils import timezone
+import numpy as np
 
 from heroic_api.models import Telescope, TargetTypes, PlannedInstrumentCapability, PlannedTelescopeStatus, TelescopeStatus, InstrumentCapability, Instrument
 
@@ -13,6 +14,7 @@ from rise_set.rates import ProperMotion
 from rise_set.visibility import Visibility
 from rise_set.exceptions import MovingViolation
 from time_intervals.intervals import Intervals
+from mocpy import MOC
 
 HOURS_PER_DEGREES = 15.0
 
@@ -58,7 +60,7 @@ def get_rise_set_intervals_by_telescope_for_target(data: dict) -> dict:
             intervals_by_telescope[telescope.id] = target_intervals.toTupleList()
         except MovingViolation:
             pass
-                
+
     return intervals_by_telescope
 
 
@@ -189,6 +191,7 @@ def get_rise_set_site(telescope: Telescope):
     return {
         'latitude': Angle(degrees=telescope.latitude),
         'longitude': Angle(degrees=telescope.longitude),
+        'altitude': telescope.site.elevation,
         'horizon': Angle(degrees=telescope.horizon),
         'ha_limit_neg': Angle(degrees=telescope.negative_ha_limit * HOURS_PER_DEGREES),
         'ha_limit_pos': Angle(degrees=telescope.positive_ha_limit * HOURS_PER_DEGREES)
@@ -330,3 +333,72 @@ def telescope_dark_intervals(telescope: Telescope, start: datetime = timezone.no
     visibility = get_rise_set_visibility(rise_set_site, start, end, telescope)
     dark_intervals = visibility.get_dark_intervals()
     return dark_intervals
+
+
+def healpix_map_to_binned_moc(fraction_map, nside, num_bins=4):
+    """Convert a fractional visibility healpix map into a binned MOC.
+
+    The fraction map holds, per NESTED healpix pixel, the fraction of the time
+    range a target at that position is visible (in [0, 1]). Pixels are grouped
+    into `num_bins` equal-width visibility bins spanning (0, 1]; pixels that are
+    never visible (fraction == 0) are omitted. Each bin is serialized as a MOCpy
+    MOC at the healpix order implied by nside (order = log2(nside)).
+
+    Parameters:
+        fraction_map: 1D array of per-pixel visible fractions (NESTED ordering)
+        nside: healpix nside the map was computed at (power of two)
+        num_bins: number of equal-width visibility bins over (0, 1]
+    Returns:
+        dict keyed by each bin's upper bound (e.g. "0.25") mapping to the bin's
+        MOC as order-keyed json (e.g. {"5": [ipix, ...]})
+    """
+    order = int(np.log2(nside))
+    values = np.asarray(fraction_map)
+    # Bin edges over the full [0, 1] range; the first bin is open at 0 so that
+    # never-visible pixels are excluded rather than forming a giant coverage.
+    edges = np.linspace(0.0, 1.0, num_bins + 1)
+    binned = {}
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        # (lo, hi]; non-overlapping and gapless across bins (0 excluded by lo=0)
+        ipix = np.nonzero((values > lo) & (values <= hi))[0].astype(np.uint64)
+        if ipix.size == 0:
+            continue
+        depth = np.full(ipix.shape, order, dtype=np.uint8)
+        moc = MOC.from_healpix_cells(ipix, depth, order)
+        binned[f"{hi:.2f}"] = moc.serialize(format="json")
+    return binned
+
+
+def get_skymap_fractional_visibility_by_telescope(data: dict) -> dict:
+    """Get rise_set fractional visibility as a binned MOC per telescope
+
+    Parameters:
+        data: The validated data from the SkyMapVisibilityQuerySerializer
+    Returns:
+        binned MOC of fractional visibility by telescope
+    """
+    start = data['start']
+    end = data['end']
+    skymap_by_telescope = {}
+
+    for telescope in data['telescopes']:
+        rise_set_site = get_rise_set_site(telescope)
+        visibility = get_rise_set_visibility(rise_set_site, start, end, telescope)
+        skymap = visibility.get_sky_fraction_map(
+            nside=data['nside'],
+            time_resolution=timedelta(minutes=data['time_resolution']),
+            airmass=data['airmass'],
+            nest=True
+        )
+        dark_intervals = visibility.get_dark_intervals()
+        dark_seconds = 0
+        for start, end in dark_intervals:
+            dark_seconds += (end - start).total_seconds()
+        skymap_by_telescope[telescope.id] = {
+            "max_order": int(np.log2(data['nside'])),
+            "num_bins": int(data['bins']),
+            "dark_hours": (dark_seconds / 3600.0 ),
+            "moc": healpix_map_to_binned_moc(skymap, data['nside'], data['bins']),
+        }
+
+    return skymap_by_telescope
