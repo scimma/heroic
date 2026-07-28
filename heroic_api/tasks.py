@@ -1,11 +1,13 @@
 import dramatiq
 import logging
 import requests
+import threading
 from datetime import timedelta, timezone, datetime
 
 from django.contrib.gis.geos import Point
 from django.conf import settings
 from astropy.time import Time
+from influxdb import InfluxDBClient
 
 from heroic_api.models import TelescopePointing, Telescope, Instrument
 
@@ -17,6 +19,59 @@ RUBIN_INSTRUMENT_ID='noirlab.cp.rubin.lsstcam'
 
 # Timeouts for the rubin schedule service. It fails and hangs alot
 RUBIN_REQUEST_TIMEOUT = (30, 120)
+
+# InfluxDB clients are lazy loaded and cached per worker thread.
+_influxdb_thread_local = threading.local()
+
+
+def get_influxdb_client():
+    """Return this thread's cached InfluxDB v1 client, or None if it cannot/should not be built."""
+    # 'built' distinguishes "not yet attempted" from "attempted and failed / not configured",
+    # so a missing config or construction error is not retried on every single write.
+    if getattr(_influxdb_thread_local, 'built', False):
+        return _influxdb_thread_local.client
+
+    _influxdb_thread_local.built = True
+    _influxdb_thread_local.client = None
+
+    # The connection uses mTLS: the client cert/key authenticate us to the InfluxDB gateway.
+    # The gateway serves a publicly-trusted (AWS ACM) cert, so the server is verified against
+    # the system CA bundle (verify_ssl=True below).
+    cert_path = settings.INFLUXDB_CLIENT_CERT
+    key_path = settings.INFLUXDB_CLIENT_KEY
+    if not (cert_path and key_path):
+        logger.warning(
+            'InfluxDB mTLS client cert/key not configured '
+            '(INFLUXDB_CLIENT_CERT / INFLUXDB_CLIENT_KEY); request metrics will not be logged.'
+        )
+        return None
+
+    try:
+        _influxdb_thread_local.client = InfluxDBClient(
+            host=settings.INFLUXDB_HOST,
+            port=settings.INFLUXDB_PORT,
+            username=settings.INFLUXDB_USERNAME or None,
+            password=settings.INFLUXDB_PASSWORD or None,
+            database=settings.INFLUXDB_DATABASE,
+            ssl=True,
+            verify_ssl=True,
+            cert=(cert_path, key_path),
+            timeout=settings.INFLUXDB_TIMEOUT,
+        )
+    except Exception:
+        logger.exception('Failed to construct InfluxDB client; request metrics will not be logged.')
+
+    return _influxdb_thread_local.client
+
+
+@dramatiq.actor(max_retries=3, min_backoff=1000, max_backoff=30000, time_limit=60000)
+def write_request_metric(point):
+    """Write a single request-metric point (built by the InfluxDBRequestLogger middleware)
+    to InfluxDB. Runs on the dramatiq worker so the write stays out of the request path."""
+    client = get_influxdb_client()
+    if client is None:
+        return
+    client.write_points([point])
 
 
 @dramatiq.actor(max_retries=5, min_backoff=5000, max_backoff=300000, time_limit=360000)
