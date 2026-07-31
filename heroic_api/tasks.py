@@ -90,7 +90,12 @@ def poll_rubin_schedule():
     # Get the schedule from 15 minutes in the past until 25 hours later
     start = datetime.now() - timedelta(minutes=15)
     logger.info(f'Getting the Rubin schedule starting at {start.strftime("%Y-%m-%d %H:%M:%S")}')
-    params = {'time': '25', 'start': start.strftime('%Y-%m-%d %H:%M:%S')}
+    params = {
+        'time': '25',
+        'start': start.strftime('%Y-%m-%d %H:%M:%S'),
+        'RESPONSEFORMAT': 'json',
+        'columns': 't_planning,target_name,s_ra,s_dec,s_fov,t_min,t_exptime,execution_status'
+    }
     response = requests.get(settings.RUBIN_SCHEDULE_URL, params=params, timeout=RUBIN_REQUEST_TIMEOUT)
     response.raise_for_status()
 
