@@ -65,7 +65,6 @@ MIDDLEWARE = [
     'heroic_api.middleware.SCiMMAAuthSessionRefresh',  # if scimma auth is expired, force user to logout
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'heroic_api.middleware.InfluxDBRequestLogger',  # log request metrics to InfluxDB via a dramatiq task
 ]
 
 ROOT_URLCONF = 'heroic_base.urls'
@@ -240,20 +239,6 @@ DRAMATIQ_BROKER = {
         "django_dramatiq.middleware.DbConnectionsMiddleware",
     ]
 }
-
-# InfluxDB v1 request-logging configuration (see heroic_api.middleware.InfluxDBRequestLogger).
-# Our configuration of InfluxDB requires a Client cert/key to connect to an https address over port 443
-# When INFLUXDB_ENABLED is false the middleware removes itself and adds no overhead.
-INFLUXDB_ENABLED = os.getenv('INFLUXDB_ENABLED', 'false').lower() == 'true'
-INFLUXDB_HOST = os.getenv('INFLUXDB_HOST', 'localhost')
-INFLUXDB_PORT = int(os.getenv('INFLUXDB_PORT', '443'))
-INFLUXDB_DATABASE = os.getenv('INFLUXDB_DATABASE', 'heroic')
-INFLUXDB_MEASUREMENT = os.getenv('INFLUXDB_MEASUREMENT', 'heroic_requests')
-INFLUXDB_USERNAME = os.getenv('INFLUXDB_USERNAME', '')
-INFLUXDB_PASSWORD = os.getenv('INFLUXDB_PASSWORD', '')
-INFLUXDB_TIMEOUT = int(os.getenv('INFLUXDB_TIMEOUT', '10'))
-INFLUXDB_CLIENT_CERT = os.getenv('INFLUXDB_CLIENT_CERT', '')
-INFLUXDB_CLIENT_KEY = os.getenv('INFLUXDB_CLIENT_KEY', '')
 
 # TOM-Alertstreams configuration
 SCIMMA_KAFKA_BASE_URL = os.getenv("SCIMMA_KAFKA_BASE_URL", default="kafka://dev.hop.scimma.org/")
