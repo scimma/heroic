@@ -57,8 +57,7 @@ dependencies = [
     "mocpy (>=0.20.0,<0.21.0)",
     "tom_alertstreams (>=1.1.0,<2.0.0)",
     "apscheduler (>=3.11.2,<4.0.0)",
-    "cryptography (>=46.0.7,<47.0.0)",
-    "influxdb (>=5.3,<6.0)"
+    "cryptography (>=46.0.7,<47.0.0)"
 ]
 
 [tool.poetry]
