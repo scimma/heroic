@@ -108,6 +108,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    volumes:
+      - /home/exouser/influx_certs:/home/exouser/influx_certs:ro
     networks:
       - heroic_net
 
