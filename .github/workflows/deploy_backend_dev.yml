@@ -94,30 +94,39 @@ jobs:
 
           DEPLOY_PATH="$HOME/heroic"
           FRONTEND_PATH="$HOME/heroic-frontend"
-          HEROIC_IMAGE="ghcr.io/scimma/heroic:dev"
 
           cd "$DEPLOY_PATH"
           git fetch origin --prune
           git checkout development
           git reset --hard origin/development
 
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+          # Capture the frontend's currently running image BEFORE tearing anything down
+          CAPTURED_FRONTEND_IMAGE=""
           if [ -d "$FRONTEND_PATH" ]; then
+            CAPTURED_FRONTEND_IMAGE=$(docker inspect --format='{{.Config.Image}}' heroic-frontend-frontend-1 2>/dev/null || echo "")
+            echo "Captured current frontend image: ${CAPTURED_FRONTEND_IMAGE:-<none found>}"
             (cd "$FRONTEND_PATH" && docker compose down) || true
           fi
 
           docker compose -f docker-compose.yml -f docker-compose.dev.yml down --remove-orphans
-          HEROIC_IMAGE="$HEROIC_IMAGE" docker compose -f docker-compose.yml -f docker-compose.dev.yml pull
-          HEROIC_IMAGE="$HEROIC_IMAGE" docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+          HEROIC_IMAGE=ghcr.io/scimma/heroic:dev docker compose -f docker-compose.yml -f docker-compose.dev.yml pull
+          HEROIC_IMAGE=ghcr.io/scimma/heroic:dev docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
           if [ -d "$FRONTEND_PATH" ]; then
+            if [ -n "$CAPTURED_FRONTEND_IMAGE" ]; then
+              export FRONTEND_IMAGE="$CAPTURED_FRONTEND_IMAGE"
+            else
+              echo "WARNING: could not capture prior frontend image, falling back to ghcr.io/scimma/heroic-frontend:dev"
+              export FRONTEND_IMAGE="ghcr.io/scimma/heroic-frontend:dev"
+            fi
             (cd "$FRONTEND_PATH" && docker compose up --no-build -d) || true
           fi
 
           sleep 20
 
-          HEROIC_IMAGE="$HEROIC_IMAGE" docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend poetry run python manage.py collectstatic --noinput
+          HEROIC_IMAGE=ghcr.io/scimma/heroic:dev docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend poetry run python manage.py collectstatic --noinput
 
           REMOTE
 
