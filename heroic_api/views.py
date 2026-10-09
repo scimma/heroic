@@ -15,9 +15,11 @@ from heroic_api.serializers import (ProfileSerializer, TargetVisibilityQuerySeri
                                     TargetVisibilityIntervalResponseSerializer,
                                     TargetVisibilityAirmassResponseSerializer,
                                     SkyMapVisibilityQuerySerializer, SkyMapVisibilityResponseSerializer,
-                                    GWVisibilityQuerySerializer, GWVisibilityResponseSerializer)
+                                    GWVisibilityQuerySerializer, GWVisibilityResponseSerializer,
+                                    ArchiveQuerySerializer, ArchiveQueryResponseSerializer)
 from heroic_api.visibility import (get_rise_set_intervals_by_telescope_for_target, get_airmass_by_telescope_for_target,
                                    get_skymap_fractional_visibility_by_telescope)
+from heroic_api.archive import search_archives
 from heroic_api.gw_calculations import calculate_gw_visibility_timeline
 from heroic_api.models import TelescopeStatus
 
@@ -344,3 +346,91 @@ class GWVisibilityAPIView(APIView):
     
     def get_endpoint_name(self):
         return 'gwVisibility'
+
+
+class ArchiveQueryAPIView(APIView):
+    """ A API view to search the public archives of heroic observatories for frames covering a position
+        Supports being called through POST with a data dict or GET with query params
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = ArchiveQuerySerializer
+    example_response = {
+        'searches': [
+            {
+                'archive': 'lco',
+                'mode': 'imaging',
+                'match': 'exact',
+                'telescopes': ['lco.tfn.domb-1m0a'],
+                'instruments': ['lco.tfn.domb-1m0a.fa20'],
+                'count': 1,
+                'truncated': False,
+                'error': None,
+                'frames': [
+                    {
+                        'id': '81234567',
+                        'filename': 'tfn1m014-fa20-20240305-0123-e91.fits.fz',
+                        'url': 'https://archive-lco-global.s3.amazonaws.com/...',
+                        'observation_date': '2024-03-05T02:16:32.326000Z',
+                        'ra': 210.80243,
+                        'dec': 54.34875,
+                        'target_name': 'M101',
+                        'telescope': 'lco.tfn.domb-1m0a',
+                        'instrument': 'lco.tfn.domb-1m0a.fa20',
+                        'filter': 'rp',
+                        'exposure_time': 30.0,
+                        'observation_type': 'EXPOSE',
+                        'reduction_level': '91',
+                        'processed': True,
+                        'proposal_id': 'LCOEPO2024A-001',
+                        'public_date': '2024-03-05T02:16:32.326000Z'
+                    }
+                ]
+            },
+            {
+                'archive': 'gemini',
+                'mode': 'spectroscopy',
+                'match': 'approximate',
+                'telescopes': ['gemini.mk.gn'],
+                'instruments': ['gemini.mk.gn.gmos_n'],
+                'count': 0,
+                'truncated': False,
+                'error': 'The search did not finish within 25 seconds',
+                'frames': []
+            }
+        ]
+    }
+
+    def get_archive_frames(self, data):
+        serializer = ArchiveQuerySerializer(data=data)
+        if serializer.is_valid():
+            return Response(search_archives(serializer.validated_data), status=status.HTTP_200_OK)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(
+        operation_id='query archive frames',
+        parameters=[ArchiveQuerySerializer],
+        responses={
+            200: OpenApiResponse(
+                response=ArchiveQueryResponseSerializer,
+                examples=[OpenApiExample(name='Success',
+                    value=example_response
+                )]
+           )
+        }
+    )
+    def get(self, request):
+        return self.get_archive_frames(request.query_params)
+
+    @extend_schema(
+        operation_id='query archive frames (post)',
+        responses={
+            200: OpenApiResponse(
+                response=ArchiveQueryResponseSerializer,
+                examples=[OpenApiExample(name='Success',
+                    value=example_response
+                )]
+           )
+        })
+    def post(self, request):
+        return self.get_archive_frames(request.data)

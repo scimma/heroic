@@ -6,7 +6,8 @@ from heroic_api.viewsets import (
     PlannedTelescopeStatusViewSet, PlannedInstrumentCapabilityViewSet
 )
 from heroic_api.views import (ProfileAPIView, TargetVisibilityAPIView, TargetAirmassAPIView,
-                              RevokeApiTokenApiView, GWVisibilityAPIView, SkyMapVisibilityAPIView)
+                              RevokeApiTokenApiView, GWVisibilityAPIView, SkyMapVisibilityAPIView,
+                              ArchiveQueryAPIView)
 
 
 router = DefaultRouter()
@@ -28,4 +29,5 @@ urlpatterns = [
     re_path(r'visibility/airmass', TargetAirmassAPIView.as_view(), name='visibility-airmass'),
     re_path(r'visibility/skymap', SkyMapVisibilityAPIView.as_view(), name='visibility-skymap'),
     re_path(r'visibility/gw', GWVisibilityAPIView.as_view(), name='visibility-gw'),
+    re_path(r'archive/query', ArchiveQueryAPIView.as_view(), name='archive-query'),
 ]

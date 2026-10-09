@@ -2,6 +2,7 @@ from django.db import models
 from django.db.models import Q
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.gis.db import models as gis_models
+from django.contrib.postgres.fields import ArrayField
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
@@ -114,6 +115,9 @@ class Telescope(models.Model):
         blank=True,
         help_text=_('Link to page with telescope information')
     )
+    archive_id = models.CharField(
+        max_length=255, blank=True, default='', help_text=_("The telescope's code in its observatory's data archive")
+    )
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="telescopes")
     created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
     modified = models.DateTimeField(auto_now=True, help_text='When this model was last modified')
@@ -127,6 +131,11 @@ class Telescope(models.Model):
 
 
 class Instrument(models.Model):
+
+    class SupportedModes(models.TextChoices):
+        IMAGER = 'imager', _('Imager')
+        SPECTROGRAPH = 'spectrograph', _('Spectrograph')
+
     id = models.CharField(max_length=255, primary_key=True, verbose_name='Instrument ID')
     name = models.CharField(max_length=255, help_text=_('Instrument name'), verbose_name='Instrument Name')
     available = models.BooleanField(default=True, help_text=_('Whether this Instrument is available or not'))
@@ -137,6 +146,14 @@ class Instrument(models.Model):
         help_text=_('Link to page with instrument information')
     )
     footprint = gis_models.PolygonField(help_text='Footprint of the CCD of the instrument, in relative coordinates (centered on 0,0)', srid=4326, null=True, blank=True)
+    archive_id = models.CharField(
+        max_length=255, blank=True, default='',
+        help_text=_("The instrument's codes in its observatory's data archive, separated by commas")
+    )
+    supported_modes = ArrayField(
+        models.CharField(max_length=20, choices=SupportedModes.choices), blank=True, default=list,
+        help_text=_('Observing modes the instrument supports')
+    )
     telescope = models.ForeignKey(Telescope, on_delete=models.CASCADE, related_name="instruments")
     created = models.DateTimeField(auto_now_add=True, help_text='When this model was created')
     modified = models.DateTimeField(auto_now=True, help_text='When this model was last modified')
