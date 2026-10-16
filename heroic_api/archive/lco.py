@@ -1,8 +1,6 @@
 """Searches of the LCO Science Archive"""
 import logging
 import warnings
-from dataclasses import dataclass
-from typing import ClassVar
 
 from astroquery.exceptions import MaxResultsWarning, NoResultsWarning
 from astroquery.lco import LcoArchiveClass
@@ -11,9 +9,8 @@ from django.conf import settings
 from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext_lazy as _
 
-from heroic_api.archive.archive import (ArchiveModes, ArchiveQuery, ArchiveSearch, ReductionLevels,
-                                        SearchResult, archive_codes, as_float, as_str, search_result, union)
-from heroic_api.models import Instrument
+from heroic_api.archive.archive import (Archive, ArchiveModes, ArchiveQuery, ArchiveSearch, ReductionLevels,
+                                        SearchResult, archive_codes, as_float, as_str)
 
 logger = logging.getLogger(__name__)
 
@@ -29,52 +26,40 @@ LCO_CONFIGURATION_TYPES = {
 }
 
 
-@dataclass(frozen=True)
-class LcoSearch(ArchiveSearch):
-    """A search of the LCO Science Archive.
+class LcoArchive(Archive):
+    """The LCO Science Archive.
 
     The archive returns the frames whose footprint contains the position, so imaging matches are exact. A spectrum's
     footprint is its slit with some padding, so spectroscopy matches are approximate, with false positives but not
     false negatives.
 
-    A search finds the frames from its cameras on its telescope at its sites. The archive takes one site and one
-    camera per query, so a search of several leaves them out of the query and keeps the matching frames afterwards.
+    If there are any instruments selected, then this will make one query per instrument id. Otherwise it will make
+    one query for all instruments together.
     """
-    archive: ClassVar[str] = 'lco'
-    archive_name: ClassVar[str] = _('LCO Science Archive')
-    sites: tuple
-    # The archive's code for the telescope, i.e. '1m0a', '2m0a', 'igla', etc.
-    telescope: str = ''
-    cameras: tuple = ()
+    id = 'lco'
+    name = _('LCO Science Archive')
 
-    @classmethod
-    def combine(cls, searches: list) -> 'LcoSearch':
-        telescopes = {search.telescope for search in searches}
-        cameras = {search.cameras for search in searches}
-        return cls(
-            searches[0].mode,
-            sites=union(search.sites for search in searches),
-            # A telescope or camera filter is kept only if every search has the same one
-            telescope=telescopes.pop() if len(telescopes) == 1 else '',
-            cameras=cameras.pop() if len(cameras) == 1 else (),
-        )
+    def instrument_keys(self, instrument, mode: str) -> list:
+        """An instrument's archive ids are the codes of its cameras, such as MuSCAT's four, and its telescope's archive
+        id is the archive's code for the telescope, such as '1m0a'. NRES units are listed under thier telescope code of
+        'igla'.
+        """
+        # LCO's HEROIC site ids end with the archive's site code, e.g. 'lco.coj'
+        site = instrument.telescope.site_id.rsplit('.', 1)[-1]
+        return [(site, instrument.telescope.archive_id, camera) for camera in archive_codes(instrument)]
 
-    def covers(self, frame: dict) -> bool:
+    def frame_key(self, frame: dict):
         # _frame names the telescope as the site and telescope code, e.g. 'tfn.1m0a'
-        site, _, telescope = (frame['telescope'] or '').partition('.')
-        return (site in self.sites and self.telescope in ('', telescope)
-                and (not self.cameras or frame['instrument'] in self.cameras))
+        site, _, telescope = frame['telescope'].partition('.')
+        return (site, telescope, frame['instrument'])
 
-    def run(self, query: ArchiveQuery) -> SearchResult:
+    def fetch(self, query: ArchiveQuery, search: ArchiveSearch) -> SearchResult:
         client = LcoArchiveClass()
         client.TIMEOUT = settings.ARCHIVE_QUERY_TIMEOUT
         criteria = {
             'start': query.start,
             'end': query.end,
-            'site_id': self.sites[0] if len(self.sites) == 1 else None,
-            'telescope_id': self.telescope or None,
-            'instrument_id': self.cameras[0] if len(self.cameras) == 1 else None,
-            'include_configuration_type': LCO_CONFIGURATION_TYPES[self.mode],
+            'include_configuration_type': LCO_CONFIGURATION_TYPES[search.mode],
         }
         if query.reduction_level != ReductionLevels.ALL:
             criteria['processed'] = query.reduction_level == ReductionLevels.PROCESSED
@@ -83,14 +68,35 @@ class LcoSearch(ArchiveSearch):
             client.login(token=settings.LCO_ARCHIVE_TOKEN)
             if not client.authenticated():
                 logger.warning('The LCO archive rejected LCO_ARCHIVE_TOKEN, so searching it anonymously')
+
+        # If we have specific instruments selected, then set up the query params per instrument here
+        narrowings = [{}]
+        if not search.complete:
+            narrowings = []
+            for instrument in search.instruments:
+                keys = self.instrument_keys(instrument, search.mode)
+                site, telescope, camera = keys[0]
+                # Instruments with multiple ids, i.e. multiple cameras, must leave the instrument id out
+                narrowings.append({'site_id': site, 'telescope_id': telescope or None,
+                                   'instrument_id': camera if len(keys) == 1 else None})
+
         # Asking for one more frame than the limit shows whether the archive holds more
         options = {'row_limit': query.row_limit + 1, 'show_progress': False, 'cache': False}
-        if query.target_name:
-            table = client.query_criteria(target_name_iexact=query.target_name, **options, **criteria)
-        else:
-            table = client.query_region(query.coordinate, **options, **criteria)
-        frames = [frame for frame in map(self._frame, table) if self.covers(frame)]
-        return search_result(frames, query.row_limit, truncated=len(table) > query.row_limit)
+        frames = []
+        truncated = False
+        for narrowing in narrowings:
+            if query.target_name:
+                table = client.query_criteria(target_name_iexact=query.target_name, **options, **criteria, **narrowing)
+            else:
+                table = client.query_region(query.coordinate, **options, **criteria, **narrowing)
+            truncated = truncated or len(table) > query.row_limit
+            # The archive returns the newest frames first
+            for frame in map(self._frame, table[:query.row_limit]):
+                # The archive files each raw NRES spectrum twice, so this ignores the non-igla version
+                if frame['observation_type'] == 'TARGET' and self.frame_key(frame)[1] != 'igla':
+                    continue
+                frames.append(frame)
+        return SearchResult(frames, truncated)
 
     @staticmethod
     def _frame(row) -> dict:
@@ -115,25 +121,3 @@ class LcoSearch(ArchiveSearch):
             'proposal_id': as_str(row['proposal_id']),
             'public_date': parse_datetime(row['public_date']),
         }
-
-
-def lco_searches(instrument) -> list:
-    """Archive searches for an instrument on one of LCO's telescopes
-
-    An instrument's archive ids are the codes of its cameras, such as MuSCAT's four, and its telescope's archive id
-    is the archive's code for the telescope. Each search finds the frames from those cameras on that telescope at
-    the instrument's site, so each frame matches one instrument. NRES units are listed under their own enclosures,
-    which is where the archive files their frames, apart from copies of the raw frames under a placeholder telescope.
-    """
-    cameras = archive_codes(instrument)
-    if not cameras:
-        return []
-    telescope = instrument.telescope
-    # LCO's HEROIC site ids end with the archive's site code, e.g. 'lco.coj'
-    site = telescope.site_id.rsplit('.', 1)[-1]
-    searches = []
-    if Instrument.SupportedModes.IMAGER in instrument.supported_modes:
-        searches.append(LcoSearch(ArchiveModes.IMAGING, (site,), telescope=telescope.archive_id, cameras=cameras))
-    if Instrument.SupportedModes.SPECTROGRAPH in instrument.supported_modes:
-        searches.append(LcoSearch(ArchiveModes.SPECTROSCOPY, (site,), telescope=telescope.archive_id, cameras=cameras))
-    return searches

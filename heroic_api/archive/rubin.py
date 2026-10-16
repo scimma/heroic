@@ -1,35 +1,32 @@
 """Searches of the Rubin pointings that HEROIC stores from the Rubin schedule"""
-from dataclasses import dataclass
-from typing import ClassVar
-
 from django.contrib.gis.geos import Point
 from django.utils.translation import gettext_lazy as _
 
-from heroic_api.archive.archive import (ArchiveQuery, ArchiveModes, ArchiveSearch, SearchResult, as_float, as_str,
-                                        search_result)
-from heroic_api.models import Instrument, TelescopePointing
+from heroic_api.archive.archive import (Archive, ArchiveModes, ArchiveQuery, ArchiveSearch, SearchResult, as_float,
+                                        as_str)
+from heroic_api.models import TelescopePointing
 from heroic_api.tasks import RUBIN_INSTRUMENT_ID, RUBIN_TELESCOPE_ID
 
 
-@dataclass(frozen=True)
-class RubinSearch(ArchiveSearch):
-    """A search of the Rubin pointings HEROIC stores, rather than an external archive.
+class RubinArchive(Archive):
+    """The Rubin pointings HEROIC stores, rather than an external archive.
 
     Only performed pointings are searched, not planned ones. A pointing matches a position when its field of view
     contains it, so matches are exact. HEROIC has no files for the pointings, so frames have no filename or link.
     """
-    archive: ClassVar[str] = 'rubin'
-    archive_name: ClassVar[str] = _('Rubin pointings stored in HEROIC')
-    runs_locally: ClassVar[bool] = True
+    id = 'rubin'
+    name = _('Rubin pointings stored in HEROIC')
+    runs_locally = True
 
-    @classmethod
-    def combine(cls, searches: list) -> 'RubinSearch':
-        return searches[0]
+    def instrument_keys(self, instrument, mode: str) -> list:
+        if instrument.id != RUBIN_INSTRUMENT_ID or mode != ArchiveModes.IMAGING:
+            return []
+        return [instrument.id]
 
-    def covers(self, frame: dict) -> bool:
-        return frame['instrument'] == RUBIN_INSTRUMENT_ID
+    def frame_key(self, frame: dict):
+        return frame['instrument']
 
-    def run(self, query: ArchiveQuery) -> SearchResult:
+    def fetch(self, query: ArchiveQuery, search: ArchiveSearch) -> SearchResult:
         pointings = TelescopePointing.objects.filter(
             telescope__id=RUBIN_TELESCOPE_ID, instrument__id=RUBIN_INSTRUMENT_ID, planned=False,
             date__gte=query.start, date__lte=query.end,
@@ -39,8 +36,9 @@ class RubinSearch(ArchiveSearch):
         else:
             pointings = pointings.filter(field__contains=Point(query.ra, query.dec, srid=4326))
         # Asking for one more pointing than the limit shows whether there are more
-        pointings = pointings.order_by('-date')[:query.row_limit + 1]
-        return search_result([self._frame(pointing) for pointing in pointings], query.row_limit)
+        pointings = list(pointings.order_by('-date')[:query.row_limit + 1])
+        return SearchResult([self._frame(pointing) for pointing in pointings[:query.row_limit]],
+                            truncated=len(pointings) > query.row_limit)
 
     @staticmethod
     def _frame(pointing: TelescopePointing) -> dict:
@@ -64,10 +62,3 @@ class RubinSearch(ArchiveSearch):
             'proposal_id': None,
             'public_date': None,
         }
-
-
-def rubin_searches(instrument) -> list:
-    """Archive searches for the Rubin instrument, whose pointings HEROIC stores"""
-    if instrument.id != RUBIN_INSTRUMENT_ID or Instrument.SupportedModes.IMAGER not in instrument.supported_modes:
-        return []
-    return [RubinSearch(ArchiveModes.IMAGING)]

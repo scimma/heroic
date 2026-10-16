@@ -1,12 +1,10 @@
 """Searches of the public archives of HEROIC observatories, and of HEROIC's Rubin pointings, for frames of a target,
 by position or by name.
 
-Each HEROIC instrument whose data is in one of these archives maps to one or more archive searches,
-one per observing mode (imaging or spectroscopy). When particular telescopes or instruments are
-requested, each of their searches is a separate archive query. When every instrument is requested,
-the searches of each archive are combined, so each archive is queried once per kind of search rather
-than once per instrument. The searches for a request run in parallel, and the frames each one finds
-are normalised to fields common to all the archives.
+Each archive is searched once per observing mode (imaging or spectroscopy), for every HEROIC instrument with data
+in it, or for the requested ones. Each archive decides how many queries a search needs. The searches for a
+request run in parallel, and the frames each one finds are normalised to fields common to all the archives. Each
+archive names the instrument that took a frame by its own codes, which name the HEROIC instrument in the results.
 
 A search by target name matches the name the observer recorded with each frame, ignoring case, so it
 finds no frames recorded under other names for the same target. Searches by position match differently
@@ -23,72 +21,91 @@ at each archive, so every search is marked as an exact or approximate match:
 
 Only public data is returned.
 
+When no telescopes or instruments are selected, the frames that archive searches find from instruments HEROIC doesn't
+list are returned too, named by the archive's own telescope and instrument codes rather than HEROIC ids. NOIRLab
+searches have to name their instruments, so they only find frames from the instruments HEROIC lists.
+
 archive.py has the parts that every archive shares, and each archive should have its own implementation file.
-This module maps HEROIC instruments to the searches that find their frames, from the archive of each
-instrument's observatory and the archive ids and supported modes of the instrument and its telescope.
+This module plans the searches for a request, from the archive of each instrument's observatory and the archive ids
+and supported modes of the instrument and its telescope.
 """
-from heroic_api.archive.archive import (ArchiveModes, ArchiveSearch, MatchTypes, ReductionLevels, combine_searches,
-                                        search_archives)
-from heroic_api.archive.gemini import GeminiSearch, gemini_searches
-from heroic_api.archive.lco import LcoSearch, lco_searches
-from heroic_api.archive.noirlab import NoirlabSearch, noirlab_searches
-from heroic_api.archive.rubin import RubinSearch, rubin_searches
+from heroic_api.archive.archive import ArchiveModes, ArchiveSearch, MatchTypes, ReductionLevels, search_archives
+from heroic_api.archive.gemini import GeminiArchive
+from heroic_api.archive.lco import LcoArchive
+from heroic_api.archive.noirlab import NoirlabArchive
+from heroic_api.archive.rubin import RubinArchive
+from heroic_api.models import Instrument
 from heroic_api.tasks import RUBIN_TELESCOPE_ID
 
 __all__ = [
     'ARCHIVE_CHOICES', 'ArchiveModes', 'ArchiveSearch', 'MatchTypes', 'ReductionLevels',
-    'archive_searches_for_instrument', 'archive_searches_for_instruments', 'search_archives',
+    'archive_searches', 'instrument_archive_modes', 'search_archives',
 ]
 
-# Each archive's id and name, from its search class
-ARCHIVE_CHOICES = [(search_class.archive, search_class.archive_name)
-                   for search_class in (LcoSearch, NoirlabSearch, GeminiSearch, RubinSearch)]
+LCO = LcoArchive()
+NOIRLAB = NoirlabArchive()
+GEMINI = GeminiArchive()
+RUBIN = RubinArchive()
 
-# The function that gets an instrument's searches of the archive holding its observatory's data,
-# keyed by HEROIC observatory id
-OBSERVATORY_SEARCHES = {
-    'lco': lco_searches,
-    'ctio': noirlab_searches,
-    'noirlab': noirlab_searches,
-    'gemini': gemini_searches,
+# Each archive's id and name
+ARCHIVE_CHOICES = [(archive.id, archive.name) for archive in (LCO, NOIRLAB, GEMINI, RUBIN)]
+
+# The archive holding the data of each HEROIC observatory's instruments, keyed by HEROIC observatory id
+OBSERVATORY_ARCHIVES = {
+    'lco': LCO,
+    'ctio': NOIRLAB,
+    'noirlab': NOIRLAB,
+    'gemini': GEMINI,
 }
 
 # Telescopes whose data is searched somewhere other than their observatory's archive, keyed by HEROIC telescope id
-TELESCOPE_SEARCHES = {
-    RUBIN_TELESCOPE_ID: rubin_searches,
+TELESCOPE_ARCHIVES = {
+    RUBIN_TELESCOPE_ID: RUBIN,
+}
+
+# The instrument capability that frames in each observing mode need
+MODE_CAPABILITIES = {
+    ArchiveModes.IMAGING: Instrument.SupportedModes.IMAGER,
+    ArchiveModes.SPECTROSCOPY: Instrument.SupportedModes.SPECTROGRAPH,
 }
 
 
-def archive_searches_for_instrument(instrument) -> list:
-    """Get the archive searches that find an instrument's frames
+def instrument_archive_modes(instrument) -> list:
+    """Get the archive holding an instrument's frames, paired with each observing mode it has frames in there
 
     Parameters:
         instrument: A HEROIC Instrument
     Returns:
-        list of ArchiveSearch, one per observing mode, or an empty list if no supported archive has its data
+        list of (Archive, mode) pairs, or an empty list if no supported archive has the instrument's frames
     """
-    searches = (TELESCOPE_SEARCHES.get(instrument.telescope_id)
-                or OBSERVATORY_SEARCHES.get(instrument.telescope.site.observatory_id))
-    if searches is None:
+    archive = (TELESCOPE_ARCHIVES.get(instrument.telescope_id)
+               or OBSERVATORY_ARCHIVES.get(instrument.telescope.site.observatory_id))
+    if archive is None:
         return []
-    return searches(instrument)
+    return [(archive, mode) for mode, capability in MODE_CAPABILITIES.items()
+            if capability in instrument.supported_modes and archive.instrument_keys(instrument, mode)]
 
 
-def archive_searches_for_instruments(instruments, mode: str = ArchiveModes.ALL, combine: bool = False) -> dict:
-    """Get the archive searches needed to find the frames of a set of instruments
+def archive_searches(mode: str, selected=None) -> list:
+    """Plan the archive searches for a request, one per archive and observing mode
 
     Parameters:
-        instruments: HEROIC Instruments to search for
         mode: ArchiveModes value to limit the searches to
-        combine: Combine each archive's searches into one per kind of search, rather than one per instrument.
-            This makes far fewer archive queries when searching for every instrument.
+        selected: set of HEROIC Instruments to search for, or None to search for every instrument
     Returns:
-        dict of each ArchiveSearch to a dict of the instruments it finds frames for, each mapped to the search
-        that finds that instrument's frames on its own. Instruments needing the same search share one entry.
+        list of ArchiveSearch for the archives and modes that the instruments searched for have frames in
     """
-    plan = {}
-    for instrument in sorted(set(instruments), key=lambda instrument: instrument.id):
-        for search in archive_searches_for_instrument(instrument):
-            if mode in (ArchiveModes.ALL, search.mode):
-                plan.setdefault(search, {})[instrument] = search
-    return combine_searches(plan) if combine else plan
+    instruments_by_search = {}
+    for instrument in Instrument.objects.select_related('telescope__site').order_by('id'):
+        for archive, instrument_mode in instrument_archive_modes(instrument):
+            if mode in (ArchiveModes.ALL, instrument_mode):
+                instruments_by_search.setdefault((archive, instrument_mode), []).append(instrument)
+    searches = []
+    for (archive, search_mode), instruments in instruments_by_search.items():
+        chosen = [instrument for instrument in instruments if selected is None or instrument in selected]
+        if chosen:
+            # If all or no instruments are selected, then we do a search without instrument id if possible
+            # and return ALL results, even instruments that aren't within HEROIC
+            complete = len(chosen) == len(instruments)
+            searches.append(ArchiveSearch(archive, search_mode, tuple(chosen), complete))
+    return searches

@@ -1,7 +1,8 @@
 """ Base class for searching multiple Observatory archives together and returning the results
 
-This has the request options, the base class that each archive's searches extend, running a set of searches
-in parallel, and helpers for normalising the archives' results.
+This has the request options, the base class that each archive extends, running a set of archive searches
+in parallel and naming each frame by the HEROIC instrument that took it, and helpers for normalising the
+archives' results.
 """
 import logging
 import math
@@ -62,75 +63,58 @@ class ArchiveQuery:
 
 @dataclass
 class SearchResult:
-    """Normalised frames from one archive search, newest first, and whether the archive held more"""
+    """Normalised frames from one archive search, and whether the archive held more"""
     frames: list
     truncated: bool
 
 
-@dataclass(frozen=True)
-class ArchiveSearch:
-    """A search of one archive for frames in one observing mode, from one instrument or from several.
+class Archive:
+    """An archive that HEROIC searches for frames. Each archive's module has a subclass.
 
-    Searches are frozen so they can be compared and used as dict keys.
+    An archive names the instrument that took each frame by its own codes. instrument_keys and frame_key turn a
+    HEROIC instrument and a frame into the same key, so search_archives can name each frame by its HEROIC instrument.
     """
     # The archive's id in search results, and its name
-    archive: ClassVar[str] = ''
-    archive_name: ClassVar[str] = ''
+    id: ClassVar[str] = ''
+    name: ClassVar[str] = ''
     # Should run the search in the local thread or not. Local thread is needed for HEROIC DB access.
     runs_locally: ClassVar[bool] = False
-    mode: str
 
-    @property
-    def match(self) -> str:
-        """Whether a matching frame covers the position (exact) or was taken near it (approximate)"""
-        if self.mode == ArchiveModes.IMAGING:
+    def match(self, mode: str) -> str:
+        """Whether a frame found in a mode covers the position (exact) or was taken near it (approximate)"""
+        if mode == ArchiveModes.IMAGING:
             return MatchTypes.EXACT
         return MatchTypes.APPROXIMATE
 
-    def combine_key(self) -> tuple:
-        """Searches of the same archive with the same key can be combined into one search"""
-        return (self.mode,)
-
-    @classmethod
-    def combine(cls, searches: list) -> 'ArchiveSearch':
-        """Group up a list of searches into a single search if possible"""
-        raise NotImplementedError
-
-    def covers(self, frame: dict) -> bool:
-        """Whether this search would find a frame, which names its telescope and instrument in the archive's codes.
-
-        This tells which instrument's search a frame from a combined search belongs to.
+    def instrument_keys(self, instrument, mode: str) -> list:
+        """The keys that name a HEROIC instrument's frames in a mode it supports, as frame_key gives them, or an
+        empty list if the archive has none of its frames in that mode
         """
         raise NotImplementedError
 
-    def run(self, query: ArchiveQuery) -> SearchResult:
+    def frame_key(self, frame: dict):
+        """The key that names the instrument that took a frame, from the archive's codes in the frame"""
+        raise NotImplementedError
+
+    def fetch(self, query: ArchiveQuery, search: 'ArchiveSearch') -> SearchResult:
+        """Query the archive for the frames of a search's instruments.
+
+        Each query keeps the newest row_limit frames it finds, and the result is truncated if any query had more.
+        The frames name their telescope and instrument by the archive's codes. They can include frames from other
+        instruments, and needn't be sorted, since search_archives sorts them out.
+        """
         raise NotImplementedError
 
 
-def combine_searches(plan: dict) -> dict:
-    """Combine a plan's searches into one search per archive and type of search, to make fewer archive queries
-
-    Searches are combined if possible when no specific telescopes/instruments are selected.
-
-    A combined search finds frames from several instruments, so each instrument keeps its own search.
-    _clean_search_results uses them to give each frame the HEROIC ids of the instrument whose own search covers it.
-
-    Parameters:
-        plan: dict of each ArchiveSearch to the instruments it finds frames for, each mapped to its own search.
-            Before combining, an instrument's own search is the key itself.
-    Returns:
-        dict of the same form, with each combined ArchiveSearch mapped to the instruments of the searches it
-        replaced
-    """
-    groups = {}
-    for search in plan:
-        groups.setdefault((type(search), search.combine_key()), []).append(search)
-    combined = {}
-    for (search_class, _key), searches in groups.items():
-        combined[search_class.combine(searches)] = {
-            instrument: member for search in searches for instrument, member in plan[search].items()
-        }
-    return combined
+@dataclass(frozen=True)
+class ArchiveSearch:
+    """A search of one archive for frames in one observing mode, from some of its HEROIC instruments"""
+    archive: Archive
+    mode: str
+    instruments: tuple
+    # Whether the instruments are all of the archive's HEROIC instruments in this mode, so the archive needn't narrow
+    # its queries down to them
+    complete: bool
 
 
 def search_archives(data: dict) -> dict:
@@ -138,6 +122,8 @@ def search_archives(data: dict) -> dict:
 
     The searches run in parallel. Any still running after settings.ARCHIVE_QUERY_TIMEOUT seconds are
     reported as timed out, and a search that fails reports its error without affecting the others.
+    Each frame is named by the HEROIC telescope and instrument that took it. Frames from instruments HEROIC doesn't
+    list keep the archive's codes, and are only returned when no telescopes or instruments are selected.
     Parameters:
         data: The validated data from the ArchiveQuerySerializer
     Returns:
@@ -147,28 +133,30 @@ def search_archives(data: dict) -> dict:
         start=data['start'], end=data['end'], reduction_level=data['reduction_level'], row_limit=data['row_limit'],
         target_name=data.get('target_name') or '', ra=data.get('ra'), dec=data.get('dec')
     )
-    plan = data['searches']
+    include_unlisted = not (data.get('telescopes') or data.get('instruments'))
+    searches = data['searches']
     timeout = settings.ARCHIVE_QUERY_TIMEOUT
-    executor = ThreadPoolExecutor(max_workers=max(1, min(len(plan), settings.ARCHIVE_QUERY_MAX_WORKERS)))
+    executor = ThreadPoolExecutor(max_workers=max(1, min(len(searches), settings.ARCHIVE_QUERY_MAX_WORKERS)))
     try:
-        futures = {search: executor.submit(search.run, query) for search in plan if not search.runs_locally}
-        for search in plan:
-            if search.runs_locally:
+        futures = {search: executor.submit(search.archive.fetch, query, search)
+                   for search in searches if not search.archive.runs_locally}
+        for search in searches:
+            if search.archive.runs_locally:
                 futures[search] = _run_here(search, query)
         done, _not_done = wait(futures.values(), timeout=timeout)
     finally:
         # Don't wait for searches that are still running. Their own request timeouts will end them.
         executor.shutdown(wait=False, cancel_futures=True)
 
-    searches = []
-    for search, members in plan.items():
+    outcomes = []
+    for search in searches:
         future = futures[search]
         outcome = {
-            'archive': search.archive,
+            'archive': search.archive.id,
             'mode': search.mode,
-            'match': MatchTypes.NAME if query.target_name else search.match,
-            'telescopes': sorted({instrument.telescope_id for instrument in members}),
-            'instruments': [instrument.id for instrument in members],
+            'match': MatchTypes.NAME if query.target_name else search.archive.match(search.mode),
+            'telescopes': sorted({instrument.telescope_id for instrument in search.instruments}),
+            'instruments': [instrument.id for instrument in search.instruments],
             'count': 0,
             'truncated': False,
             'error': None,
@@ -177,45 +165,38 @@ def search_archives(data: dict) -> dict:
         if future not in done:
             outcome['error'] = f'The search did not finish within {timeout:g} seconds'
         elif future.exception() is not None:
-            logger.warning(f'Archive search {search} failed', exc_info=future.exception())
+            logger.warning(f'The {search.archive.id} {search.mode} search failed', exc_info=future.exception())
             outcome['error'] = _error_message(future.exception())
         else:
             result = future.result()
-            outcome['frames'] = _clean_search_results(result.frames, members)
-            outcome['count'] = len(outcome['frames'])
+            # HEROIC lists each archive instrument once, so each key names one instrument
+            instruments = {key: instrument for instrument in search.instruments
+                           for key in search.archive.instrument_keys(instrument, search.mode)}
+            frames = []
+            for frame in result.frames:
+                instrument = instruments.get(search.archive.frame_key(frame))
+                if instrument is not None:
+                    frames.append({**frame, 'telescope': instrument.telescope_id, 'instrument': instrument.id})
+                elif include_unlisted:
+                    frames.append(frame)
+            # A search with several queries returns all of their frames together
+            frames.sort(key=lambda frame: frame['observation_date'], reverse=True)
+            outcome['frames'] = frames
+            outcome['count'] = len(frames)
             outcome['truncated'] = result.truncated
-        searches.append(outcome)
+        outcomes.append(outcome)
 
-    return {'searches': searches}
+    return {'searches': outcomes}
 
 
 def _run_here(search: ArchiveSearch, query: ArchiveQuery) -> Future:
     """Run a search in this thread, giving its outcome as a finished future like the other searches'"""
     future = Future()
     try:
-        future.set_result(search.run(query))
+        future.set_result(search.archive.fetch(query, search))
     except Exception as exception:
         future.set_exception(exception)
     return future
-
-
-def _clean_search_results(frames: list, members: dict) -> list:
-    """Give frames the HEROIC ids of the instruments that took them, and leave out frames from other instruments
-
-    HEROIC should list each archive instrument only once, so at most one instrument's own search covers a frame.
-    Parameters:
-        frames: Frames found by a search, which name their telescope and instrument in the archive's codes
-        members: dict of the instruments the search finds frames for, each mapped to its own search
-    Returns:
-        The frames that an instrument's own search covers, with that instrument's HEROIC telescope and instrument ids
-    """
-    cleaned = []
-    for frame in frames:
-        for instrument, search in members.items():
-            if search.covers(frame):
-                cleaned.append({**frame, 'telescope': instrument.telescope_id, 'instrument': instrument.id})
-                break
-    return cleaned
 
 
 def _error_message(exception: Exception) -> str:
@@ -253,12 +234,6 @@ def within_field_of_view(frames: list, coordinate: SkyCoord, field_radii: dict, 
     separations = centers.separation(coordinate).deg
     return [frame for frame, separation in zip(frames, separations)
             if separation <= field_radii[frame['instrument']] + margin]
-
-
-def search_result(frames: list, row_limit: int, truncated: bool = False) -> SearchResult:
-    """Sort frames with the newest first and keep row_limit of them, noting whether any were left out"""
-    frames.sort(key=lambda frame: frame['observation_date'], reverse=True)
-    return SearchResult(frames=frames[:row_limit], truncated=truncated or len(frames) > row_limit)
 
 
 def archive_codes(instrument) -> tuple:

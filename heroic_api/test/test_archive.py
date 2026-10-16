@@ -293,18 +293,30 @@ class TestArchiveSearchPlanning(BaseArchiveTestCase):
         })
         self.assertEqual(self._query_count(), 6)
 
-    def test_selected_telescopes_are_searched_once_per_instrument(self):
-        query = {**self.query, 'telescopes': [self.tfn_1m.id, self.ogg_2m.id, self.lsc_igla.id]}
+    def test_selected_lco_instruments_are_queried_one_at_a_time(self):
+        # An LCO imager that isn't selected, so the selected imagers can't share one query of every LCO frame
+        tfn_0m4 = mixer.blend(models.Telescope, id='lco.tfn.aqwa-0m4a', site=self.tfn_1m.site, archive_id='0m4a')
+        mixer.blend(models.Instrument, id='lco.tfn.aqwa-0m4a.sq32', telescope=tfn_0m4, archive_id='sq32',
+                    supported_modes=[models.Instrument.SupportedModes.IMAGER])
+        query = {**self.query, 'telescopes': [self.tfn_1m.id, self.ogg_2m.id]}
         response = self.client.get(reverse('api:archive-query'), data=query)
         self.assertEqual(self._searched(response), {
-            ('lco', 'imaging', (self.sinistro.id,)),
-            ('lco', 'imaging', (self.muscat.id,)),
+            ('lco', 'imaging', (self.muscat.id, self.sinistro.id)),
             ('lco', 'spectroscopy', (self.floyds.id,)),
-            ('lco', 'spectroscopy', (self.nres.id,)),
         })
-        self.assertEqual(self._query_count(), 4)
+        self.assertEqual(self._query_count(), 3)
 
-    def test_combined_search_names_each_frame_by_its_heroic_instrument(self):
+    def test_selecting_every_lco_instrument_of_a_mode_queries_them_together(self):
+        # Every LCO spectrograph, but only one of its imagers
+        query = {**self.query, 'telescopes': [self.ogg_2m.id, self.lsc_igla.id]}
+        response = self.client.get(reverse('api:archive-query'), data=query)
+        self.assertEqual(self._searched(response), {
+            ('lco', 'imaging', (self.muscat.id,)),
+            ('lco', 'spectroscopy', (self.nres.id, self.floyds.id)),
+        })
+        self.assertEqual(self._query_count(), 2)
+
+    def test_frames_are_named_by_their_heroic_instrument_or_archive_codes(self):
         self.lco.return_value.query_region.return_value = lco_table(
             {'id': 1},
             # One of MuSCAT's cameras, and the camera it replaced on the same telescope
@@ -319,9 +331,26 @@ class TestArchiveSearchPlanning(BaseArchiveTestCase):
         self.assertEqual({frame['id']: (frame['telescope'], frame['instrument']) for frame in frames}, {
             '1': (self.tfn_1m.id, self.sinistro.id),
             '2': (self.ogg_2m.id, self.muscat.id),
+            '3': ('ogg.2m0a', 'fs02'),
+            '4': ('tfn.1m0a', 'fa11'),
+            '5': ('sor.4m0a', 'ghts_red_imager'),
         })
 
-    def test_combined_spectroscopy_search_names_each_frame_by_its_camera_and_telescope(self):
+    def test_selected_telescopes_leave_out_frames_from_unlisted_instruments(self):
+        self.lco.return_value.query_region.return_value = lco_table(
+            {'id': 1, 'site_id': 'ogg', 'telescope_id': '2m0a', 'instrument_id': 'en06',
+             'configuration_type': 'SPECTRUM'},
+            # A FLOYDS that HEROIC doesn't list
+            {'id': 2, 'site_id': 'coj', 'telescope_id': '2m0a', 'instrument_id': 'en12',
+             'configuration_type': 'SPECTRUM'},
+        )
+        # Every LCO spectrograph, so they share one query of every LCO spectrum
+        query = {**self.query, 'telescopes': [self.ogg_2m.id, self.lsc_igla.id], 'mode': 'spectroscopy'}
+        response = self.client.get(reverse('api:archive-query'), data=query)
+        frames = self._search(response, 'lco')['frames']
+        self.assertEqual({frame['id']: frame['instrument'] for frame in frames}, {'1': self.floyds.id})
+
+    def test_lco_spectra_are_named_by_their_camera_and_telescope(self):
         nres = {'site_id': 'lsc', 'instrument_id': 'fa09', 'configuration_type': 'TARGET'}
         self.lco.return_value.query_region.return_value = lco_table(
             {'id': 1, 'telescope_id': 'igla', **nres},
@@ -409,15 +438,32 @@ class TestArchiveQueryResponse(BaseArchiveTestCase):
                          'https://archive.gemini.edu/file/N20230605S0078.fits.bz2')
 
     def test_frames_beyond_the_row_limit_are_reported_as_truncated(self):
+        # The archive returns the newest frames first
         self.lco.return_value.query_region.return_value = lco_table(
-            *[{'id': i, 'observation_date': f'2024-03-0{i + 1}T00:00:00Z'} for i in range(3)]
+            *[{'id': i, 'observation_date': f'2024-03-0{i + 1}T00:00:00Z'} for i in reversed(range(3))]
         )
         query = {**self.query, 'instruments': [self.sinistro.id], 'row_limit': 2}
         response = self.client.get(reverse('api:archive-query'), data=query)
         search = self._search(response, 'lco')
         self.assertTrue(search['truncated'])
-        # The newest frames are kept
         self.assertEqual([frame['id'] for frame in search['frames']], ['2', '1'])
+
+    def test_row_limit_applies_to_each_query_of_a_search(self):
+        # An LCO imager that isn't selected, so each selected LCO imager is queried on its own
+        tfn_0m4 = mixer.blend(models.Telescope, id='lco.tfn.aqwa-0m4a', site=self.tfn_1m.site, archive_id='0m4a')
+        mixer.blend(models.Instrument, id='lco.tfn.aqwa-0m4a.sq32', telescope=tfn_0m4, archive_id='sq32',
+                    supported_modes=[models.Instrument.SupportedModes.IMAGER])
+        muscat = {'site_id': 'ogg', 'telescope_id': '2m0a', 'instrument_id': 'ep04'}
+        self.lco.return_value.query_region.side_effect = [
+            lco_table({'id': 1, 'observation_date': '2024-03-02T00:00:00Z', **muscat},
+                      {'id': 2, 'observation_date': '2024-03-01T00:00:00Z', **muscat}),
+            lco_table({'id': 3, 'observation_date': '2024-03-03T00:00:00Z'}),
+        ]
+        query = {**self.query, 'instruments': [self.sinistro.id, self.muscat.id], 'row_limit': 1}
+        response = self.client.get(reverse('api:archive-query'), data=query)
+        search = self._search(response, 'lco')
+        self.assertTrue(search['truncated'])
+        self.assertEqual([frame['id'] for frame in search['frames']], ['3', '1'])
 
     def test_gemini_frames_that_are_not_public_are_left_out(self):
         self.gemini.return_value.query_raw.return_value = gemini_table(

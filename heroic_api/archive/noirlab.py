@@ -2,9 +2,7 @@
 import math
 import os
 import re
-from dataclasses import dataclass
 from datetime import datetime, timezone as dt_timezone
-from typing import ClassVar
 
 from astroquery.noirlab import NOIRLabClass
 from django.conf import settings
@@ -12,10 +10,9 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext_lazy as _
 
-from heroic_api.archive.archive import (SPECTRUM_BOX_HALF_WIDTH, ArchiveModes, ArchiveQuery, ArchiveSearch, MatchTypes,
-                                        ReductionLevels, SearchResult, archive_codes, as_float, as_str, half_diagonal,
-                                        search_result, union, within_field_of_view)
-from heroic_api.models import Instrument
+from heroic_api.archive.archive import (SPECTRUM_BOX_HALF_WIDTH, Archive, ArchiveModes, ArchiveQuery, ArchiveSearch,
+                                        MatchTypes, ReductionLevels, SearchResult, archive_codes, as_float, as_str,
+                                        half_diagonal, union, within_field_of_view)
 
 # NOIRLab imaging boxes are widened by this margin, since a raw file's center comes from its header pointing.
 # Any noirlabs upper margin of pointing error is approximately this amount.
@@ -66,37 +63,35 @@ GOODMAN_RED_CAMERA_START = datetime(2016, 10, 13, tzinfo=dt_timezone.utc)
 GOODMAN_NO_GRATING = re.compile(r'<?no[ _]grating>?', re.IGNORECASE)
 
 
-@dataclass(frozen=True)
-class NoirlabSearch(ArchiveSearch):
-    """A search of the NOIRLab Astro Data Archive.
+class NoirlabArchive(Archive):
+    """The NOIRLab Astro Data Archive.
 
     NOIRLab only records each file's center, so every match is approximate. Imaging searches select centers
     in a box around the position as wide as the widest field of view searched, plus a margin, then keep the
     files whose instrument's field of view contains the position. Spectrum searches select recorded positions
     within +/-40" of the position to approximate the slit and pointing error.
-    """
-    archive: ClassVar[str] = 'noirlab'
-    archive_name: ClassVar[str] = _('NOIRLab Astro Data Archive')
-    telescopes: tuple
-    instruments: tuple
 
-    @property
-    def match(self) -> str:
+    NOIRLab only returns headers for queries for specific instruments, and multiple instruments can be combined
+    in one query, so all NOIRLab searches use a single query for all instruments requested.
+    """
+    id = 'noirlab'
+    name = _('NOIRLab Astro Data Archive')
+
+    def match(self, mode: str) -> str:
         return MatchTypes.APPROXIMATE
 
-    @classmethod
-    def combine(cls, searches: list) -> 'NoirlabSearch':
-        return cls(
-            searches[0].mode,
-            telescopes=union(search.telescopes for search in searches),
-            instruments=union(search.instruments for search in searches),
-        )
+    def instrument_keys(self, instrument, mode: str) -> list:
+        # Files under Goodman's old code are named by the camera that took them, so the old code names no files
+        return [(instrument.telescope.archive_id, code) for code in _noirlab_codes(instrument, mode)
+                if code != NOIRLAB_GOODMAN_CODE]
 
-    def covers(self, frame: dict) -> bool:
-        return frame['telescope'] in self.telescopes and frame['instrument'] in self.instruments
+    def frame_key(self, frame: dict):
+        return (frame['telescope'], frame['instrument'])
 
-    def run(self, query: ArchiveQuery) -> SearchResult:
-        processed_types = union(NOIRLAB_PROCESSED_TYPES.get(instrument, ()) for instrument in self.instruments)
+    def fetch(self, query: ArchiveQuery, search: ArchiveSearch) -> SearchResult:
+        telescopes = sorted({instrument.telescope.archive_id for instrument in search.instruments})
+        codes = union(_noirlab_codes(instrument, search.mode) for instrument in search.instruments)
+        processed_types = union(NOIRLAB_PROCESSED_TYPES.get(code, ()) for code in codes)
         proc_types = {
             ReductionLevels.RAW: ('raw',),
             ReductionLevels.PROCESSED: processed_types,
@@ -105,7 +100,7 @@ class NoirlabSearch(ArchiveSearch):
         if not proc_types:
             # Processed data was asked for from instruments that only have raw data
             return SearchResult(frames=[], truncated=False)
-        instruments = list(self.instruments)
+        instruments = list(codes)
         outfields = NOIRLAB_FIELDS
         if NOIRLAB_GOODMAN_CODE in instruments:
             # NOIRLab only accepts header fields that the files of the first instrument and proc_type have. Goodman's
@@ -121,39 +116,40 @@ class NoirlabSearch(ArchiveSearch):
             ['dateobs_center', query.start.isoformat(), query.end.isoformat()],
             # Unreleased files have a future release date, so this keeps public files only
             ['release_date', '1900-01-01', timezone.now().date().isoformat()],
-            ['telescope', *self.telescopes],
+            ['telescope', *telescopes],
             ['instrument', *instruments],
             ['obs_type', 'object'],
             ['proc_type', *proc_types],
         ]
-        if self.mode == ArchiveModes.IMAGING:
+        if search.mode == ArchiveModes.IMAGING:
             filters.append(['prod_type', 'image'])
 
         if query.target_name:
             # Matches the OBJECT header the observer set, ignoring case
-            searches = [[['OBJECT', query.target_name, 'iexact']]]
+            boxes = [[['OBJECT', query.target_name, 'iexact']]]
         else:
             half_width = SPECTRUM_BOX_HALF_WIDTH
-            if self.mode == ArchiveModes.IMAGING:
-                half_width = max(NOIRLAB_FIELD_RADII[instrument] for instrument in self.instruments)
+            if search.mode == ArchiveModes.IMAGING:
+                half_width = max(NOIRLAB_FIELD_RADII[code] for code in codes)
                 half_width += NOIRLAB_POINTING_MARGIN
-            searches = _center_box_terms(query.ra, query.dec, half_width)
+            boxes = _center_box_terms(query.ra, query.dec, half_width)
 
         frames = []
         truncated = False
-        for terms in searches:
+        for terms in boxes:
             # Asking for one more file than the limit shows whether the archive holds more
             table = client.query_metadata(
                 {'outfields': outfields, 'search': terms + filters},
                 sort='-dateobs_center', limit=query.row_limit + 1, cache=False
             )
             truncated = truncated or len(table) > query.row_limit
-            # Goodman's old code finds files from both cameras and modes, and some that can't be attributed
-            frames.extend(frame for frame in map(self._frame, table) if self.covers(frame))
-        if self.mode == ArchiveModes.IMAGING and not query.target_name:
+            # Goodman's old code finds files from both cameras and modes, and some that can't be attributed, so only
+            # files under the codes searched for are kept
+            frames.extend(frame for frame in map(self._frame, table[:query.row_limit]) if frame['instrument'] in codes)
+        if search.mode == ArchiveModes.IMAGING and not query.target_name:
             # The box is wider than each field at its corners, in RA towards the poles, and for narrower fields
             frames = within_field_of_view(frames, query.coordinate, NOIRLAB_FIELD_RADII, NOIRLAB_POINTING_MARGIN)
-        return search_result(frames, query.row_limit, truncated)
+        return SearchResult(frames, truncated)
 
     @staticmethod
     def _frame(row) -> dict:
@@ -188,7 +184,7 @@ class NoirlabSearch(ArchiveSearch):
 def _goodman_code(row, observation_date: datetime):
     """The current code for the Goodman camera and mode that took a file filed under Goodman's old code
 
-    Returns None if the file doesn't say whether it's an image or a spectrum, so no search covers it.
+    Returns None if the file doesn't say whether it's an image or a spectrum, so no search keeps it.
     """
     camera = (as_str(row['INSTCONF']) or '').lower()
     if camera not in ('red', 'blue'):
@@ -225,24 +221,16 @@ def _center_box_terms(ra: float, dec: float, half_width: float) -> list:
     return [[['ra_center', range_lo, range_hi], dec_term] for range_lo, range_hi in ranges]
 
 
-def noirlab_searches(instrument) -> list:
-    """Archive searches for an instrument on a telescope whose data is at NOIRLab
+def _noirlab_codes(instrument, mode: str) -> tuple:
+    """An instrument's NOIRLab codes in a mode, or none if its telescope has no NOIRLab code
 
-    The searches use the archive ids of the instrument and its telescope, one for each mode the instrument supports.
-    NOIRLab files a camera's images and spectra under different codes, such as Goodman's, so an imaging search uses
-    the instrument's codes in NOIRLAB_FIELD_RADII, which sizes its box, while a spectroscopy search uses the other
-    instrument codes. Goodman's old code has both images and spectra, so both searches use it.
+    NOIRLab files a camera's images and spectra under different codes, such as Goodman's, so imaging uses the
+    instrument's codes in NOIRLAB_FIELD_RADII, which sizes its box, while spectroscopy uses the other codes.
+    Goodman's old code has both images and spectra, so both modes use it.
     """
-    telescope_id = instrument.telescope.archive_id
+    if not instrument.telescope.archive_id:
+        return ()
     codes = archive_codes(instrument)
-    if not telescope_id or not codes:
-        return []
-    imager_codes = tuple(code for code in codes if code in NOIRLAB_FIELD_RADII)
-    spectrograph_codes = tuple(code for code in codes
-                               if code not in NOIRLAB_FIELD_RADII or code == NOIRLAB_GOODMAN_CODE)
-    searches = []
-    if Instrument.SupportedModes.IMAGER in instrument.supported_modes and imager_codes:
-        searches.append(NoirlabSearch(ArchiveModes.IMAGING, (telescope_id,), imager_codes))
-    if Instrument.SupportedModes.SPECTROGRAPH in instrument.supported_modes and spectrograph_codes:
-        searches.append(NoirlabSearch(ArchiveModes.SPECTROSCOPY, (telescope_id,), spectrograph_codes))
-    return searches
+    if mode == ArchiveModes.IMAGING:
+        return tuple(code for code in codes if code in NOIRLAB_FIELD_RADII)
+    return tuple(code for code in codes if code not in NOIRLAB_FIELD_RADII or code == NOIRLAB_GOODMAN_CODE)

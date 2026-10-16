@@ -6,8 +6,8 @@ from django.contrib.gis.db.models.functions import Translate
 from drf_spectacular.utils import extend_schema_serializer, OpenApiExample
 from rest_framework import serializers
 from heroic_api.visibility import telescope_dark_intervals
-from heroic_api.archive import (ARCHIVE_CHOICES, ArchiveModes, MatchTypes, ReductionLevels,
-                                archive_searches_for_instrument, archive_searches_for_instruments)
+from heroic_api.archive import (ARCHIVE_CHOICES, ArchiveModes, MatchTypes, ReductionLevels, archive_searches,
+                                instrument_archive_modes)
 from heroic_api.models import (Observatory, Site, Telescope, Instrument, TelescopeStatus, TelescopePointing,
                                InstrumentCapability, Profile, TargetTypes, PlannedTelescopeStatus,
                                PlannedInstrumentCapability)
@@ -650,10 +650,10 @@ class GWVisibilityResponseSerializer(serializers.Serializer):
 class ArchiveQuerySerializer(serializers.Serializer):
     """ Serializer for searches of the public archives for HEROIC observatories for frames of a target
 
-    The archives are searched by target name if one is given, or else around ra and dec. Without any telescopes
-    or instruments, every instrument with data in a supported archive is searched, with one search per archive
-    and kind of search. With telescopes and/or instruments, each selected instrument gets its own searches.
-    The validated data gets the archive searches to run in 'searches'.
+    The archives are searched by target name if one is given, or else around ra and dec. Each archive is searched
+    once per observing mode, for the selected telescopes and instruments with data in it, or for every instrument
+    with data in it if none are selected. Without a selection, frames from instruments HEROIC doesn't list are
+    returned too. The validated data gets the archive searches to run in 'searches'.
     """
     ra = serializers.FloatField(
         min_value=0.0, max_value=360.0, required=False, help_text=_('Right Ascension in decimal degrees')
@@ -689,9 +689,9 @@ class ArchiveQuerySerializer(serializers.Serializer):
     )
     row_limit = serializers.IntegerField(
         min_value=1, max_value=10000, default=2000, required=False,
-        help_text=_('Maximum number of frames returned by each archive search, which reports whether it had more '
-                    'frames than this. Each selected instrument and mode is a separate search, and without a '
-                    'selection each archive is searched once per kind of search.')
+        help_text=_('Maximum number of frames returned by each archive query. Archive searches consist of '
+                    'one or more queries split by observing mode and possibly instrument, so the total result '
+                    'set of a search may be larger then this value.')
     )
 
     def validate(self, data):
@@ -710,7 +710,7 @@ class ArchiveQuerySerializer(serializers.Serializer):
 
         telescopes = validated_data.get('telescopes') or []
         instruments = validated_data.get('instruments') or []
-        unsupported = [instrument.id for instrument in instruments if not archive_searches_for_instrument(instrument)]
+        unsupported = [instrument.id for instrument in instruments if not instrument_archive_modes(instrument)]
         if unsupported:
             raise serializers.ValidationError(
                 {'instruments': _(f'No supported archive has data for these instruments: {", ".join(unsupported)}')}
@@ -723,20 +723,16 @@ class ArchiveQuerySerializer(serializers.Serializer):
                 {'instruments': _(f'These instruments are not on the selected telescopes: {", ".join(elsewhere)}')}
             )
 
+        selected = None
         if telescopes or instruments:
             # Selected instruments narrow their telescopes down to themselves. Other selected telescopes are
             # searched with all of their instruments, skipping ones without archive data.
-            selected = list(instruments)
+            selected = set(instruments)
             narrowed_telescope_ids = {instrument.telescope_id for instrument in instruments}
             for telescope in telescopes:
                 if telescope.id not in narrowed_telescope_ids:
-                    selected.extend(telescope.instruments.all())
-            validated_data['searches'] = archive_searches_for_instruments(selected, validated_data['mode'])
-        else:
-            # Search for every instrument, combining each archive's searches to keep the number of queries down
-            validated_data['searches'] = archive_searches_for_instruments(
-                Instrument.objects.select_related('telescope__site'), validated_data['mode'], combine=True
-            )
+                    selected.update(telescope.instruments.all())
+        validated_data['searches'] = archive_searches(validated_data['mode'], selected)
         if not validated_data['searches']:
             mode = '' if validated_data['mode'] == ArchiveModes.ALL else f'{validated_data["mode"]} '
             raise serializers.ValidationError(
@@ -758,7 +754,8 @@ class ArchiveQuerySerializer(serializers.Serializer):
 class ArchiveFrameSerializer(serializers.Serializer):
     """Serializer for one frame in an archive query response, with fields normalised across the archives
 
-    Each frame names the HEROIC telescope and instrument that took it.
+    Each frame names the HEROIC telescope and instrument that took it, or the archive's codes for them if HEROIC
+    doesn't list the instrument.
     """
     id = serializers.CharField(help_text=_('Archive identifier of the frame'))
     filename = serializers.CharField(allow_null=True)
@@ -769,8 +766,14 @@ class ArchiveFrameSerializer(serializers.Serializer):
     ra = serializers.FloatField(allow_null=True, help_text=_('Right Ascension of the frame center in decimal degrees'))
     dec = serializers.FloatField(allow_null=True, help_text=_('Declination of the frame center in decimal degrees'))
     target_name = serializers.CharField(allow_null=True, help_text=_('Target name given by the observer'))
-    telescope = serializers.CharField(help_text=_('HEROIC id of the telescope that took the frame.'))
-    instrument = serializers.CharField(help_text=_('HEROIC id of the instrument that took the frame'))
+    telescope = serializers.CharField(
+        help_text=_("HEROIC id of the telescope that took the frame, or the archive's code for it if HEROIC doesn't "
+                    'list the instrument')
+    )
+    instrument = serializers.CharField(
+        help_text=_("HEROIC id of the instrument that took the frame, or the archive's code for it if HEROIC doesn't "
+                    'list it')
+    )
     filter = serializers.CharField(allow_null=True, help_text=_("Archive's name for the optical filter"))
     exposure_time = serializers.FloatField(allow_null=True, help_text=_('Exposure time in seconds'))
     observation_type = serializers.CharField(allow_null=True, help_text=_("Archive's observation type"))
@@ -793,7 +796,7 @@ class ArchiveSearchResultSerializer(serializers.Serializer):
     instruments = serializers.ListField(child=serializers.CharField(), help_text=_('Instruments searched for'))
     count = serializers.IntegerField(help_text=_('Number of frames returned by the search'))
     truncated = serializers.BooleanField(
-        help_text=_('Whether the archive had more frames than the row limit, which were left out')
+        help_text=_('Whether any of the archive queries had more frames than the row limit, which were left out')
     )
     error = serializers.CharField(allow_null=True, help_text=_('Why the search failed, or null if it succeeded'))
     frames = ArchiveFrameSerializer(many=True, help_text=_('Frames the search found, newest first'))
