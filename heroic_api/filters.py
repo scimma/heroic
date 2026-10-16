@@ -36,7 +36,7 @@ class InstrumentFilter(django_filters.FilterSet):
 
     class Meta:
         model = Instrument
-        exclude = ['instrument_url', 'footprint']
+        exclude = ['instrument_url', 'footprint', 'supported_modes']
 
 
 class BaseTelescopeStatusFilter(django_filters.FilterSet):
@@ -131,7 +131,7 @@ class TelescopePointingFilter(django_filters.FilterSet):
     telescope = django_filters.ModelMultipleChoiceFilter(queryset=Telescope.objects.all(), field_name='telescope__id', to_field_name='id')
     instrument = django_filters.ModelMultipleChoiceFilter(queryset=Instrument.objects.all(), field_name='instrument__id', to_field_name='id')
     planned = django_filters.BooleanFilter(field_name='planned')
-    target = django_filters.CharFilter(field_name='target', lookup_expr='icontainer', label='Target name contains')
+    target = django_filters.CharFilter(field_name='target', lookup_expr='icontains', label='Target name contains')
     target_exact = django_filters.CharFilter(field_name='target', lookup_expr='exact', label='Target name exact')
     cone_search = django_filters.CharFilter(method='filter_cone_search', label='Cone Search',
                                             help_text='RA, Dec (degrees)')

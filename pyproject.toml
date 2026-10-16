@@ -58,7 +58,9 @@ dependencies = [
     "tom_alertstreams (>=1.1.0,<2.0.0)",
     "apscheduler (>=3.11.2,<4.0.0)",
     "cryptography (>=50.0.0,<51.0.0)",
-    "influxdb (>=5.3,<6.0)"
+    "influxdb (>=5.3,<6.0)",
+    # The astroquery LCO module is not in a published release yet, so this uses LCO's branch until it is
+    "astroquery @ git+https://github.com/LCOGT/astroquery.git@feature/lco_module"
 ]
 
 [tool.poetry]
