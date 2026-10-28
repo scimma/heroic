@@ -6,6 +6,7 @@ archives' results.
 """
 import logging
 import math
+import time
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime
@@ -136,6 +137,8 @@ def search_archives(data: dict) -> dict:
     include_unlisted = not (data.get('telescopes') or data.get('instruments'))
     searches = data['searches']
     timeout = settings.ARCHIVE_QUERY_TIMEOUT
+    # The searches that run in this thread count against the same deadline as the others
+    deadline = time.monotonic() + timeout
     executor = ThreadPoolExecutor(max_workers=max(1, min(len(searches), settings.ARCHIVE_QUERY_MAX_WORKERS)))
     try:
         futures = {search: executor.submit(search.archive.fetch, query, search)
@@ -143,7 +146,7 @@ def search_archives(data: dict) -> dict:
         for search in searches:
             if search.archive.runs_locally:
                 futures[search] = _run_here(search, query)
-        done, _not_done = wait(futures.values(), timeout=timeout)
+        done, _not_done = wait(futures.values(), timeout=max(0.0, deadline - time.monotonic()))
     finally:
         # Don't wait for searches that are still running. Their own request timeouts will end them.
         executor.shutdown(wait=False, cancel_futures=True)

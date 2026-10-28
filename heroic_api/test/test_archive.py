@@ -562,3 +562,12 @@ class TestRubinPointingSearch(BaseArchiveTestCase):
         search = self._search(response, 'rubin')
         self.assertEqual(search['match'], 'name')
         self.assertEqual([frame['id'] for frame in search['frames']], ['second', 'first'])
+
+    def test_processed_searches_find_no_pointings(self):
+        self._pointing((2024, 3, 5))
+        query = {**self.query, 'instruments': [self.lsstcam.id], 'reduction_level': 'processed'}
+        response = self.client.get(reverse('api:archive-query'), data=query)
+        self.assertEqual(response.status_code, 200)
+        search = self._search(response, 'rubin')
+        self.assertIsNone(search['error'])
+        self.assertEqual(search['frames'], [])

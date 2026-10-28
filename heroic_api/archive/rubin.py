@@ -2,8 +2,8 @@
 from django.contrib.gis.geos import Point
 from django.utils.translation import gettext_lazy as _
 
-from heroic_api.archive.archive import (Archive, ArchiveModes, ArchiveQuery, ArchiveSearch, SearchResult, as_float,
-                                        as_str)
+from heroic_api.archive.archive import (Archive, ArchiveModes, ArchiveQuery, ArchiveSearch, ReductionLevels,
+                                        SearchResult, as_float, as_str)
 from heroic_api.models import TelescopePointing
 from heroic_api.tasks import RUBIN_INSTRUMENT_ID, RUBIN_TELESCOPE_ID
 
@@ -12,7 +12,8 @@ class RubinArchive(Archive):
     """The Rubin pointings HEROIC stores, rather than an external archive.
 
     Only performed pointings are searched, not planned ones. A pointing matches a position when its field of view
-    contains it, so matches are exact. HEROIC has no files for the pointings, so frames have no filename or link.
+    contains it, so matches are exact. HEROIC has no files for the pointings, so frames have no filename or link,
+    and searches for processed frames find none.
     """
     id = 'rubin'
     name = _('Rubin pointings stored in HEROIC')
@@ -27,6 +28,8 @@ class RubinArchive(Archive):
         return frame['instrument']
 
     def fetch(self, query: ArchiveQuery, search: ArchiveSearch) -> SearchResult:
+        if query.reduction_level == ReductionLevels.PROCESSED:
+            return SearchResult(frames=[], truncated=False)
         pointings = TelescopePointing.objects.filter(
             telescope__id=RUBIN_TELESCOPE_ID, instrument__id=RUBIN_INSTRUMENT_ID, planned=False,
             date__gte=query.start, date__lte=query.end,
