@@ -131,6 +131,15 @@ class InstrumentAdmin(admin.ModelAdmin):
     search_fields = ('id', 'name', 'telescope__id', 'telescope__site__name', 'telescope__site__observatory__name')
     inlines = (LatestInstrumentCapabilityInline,)
 
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == 'supported_modes':
+            # A select of the modes rather than comma separated text. It allows several, since an instrument can
+            # support both.
+            return forms.MultipleChoiceField(
+                choices=models.Instrument.SupportedModes.choices, required=False, help_text=db_field.help_text
+            )
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
 class TelescopeAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'aperture', 'site', 'instruments_count')
     list_filter = ('aperture', 'site__name', 'site__observatory__name')

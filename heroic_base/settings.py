@@ -172,6 +172,15 @@ SPECTACULAR_SETTINGS = {
 
 RUBIN_SCHEDULE_URL = os.getenv('RUBIN_SCHEDULE_URL', 'https://usdf-rsp.slac.stanford.edu/obsloctap/schedule')
 
+# Archive searches (heroic_api.archive) run in parallel, ARCHIVE_QUERY_MAX_WORKERS at a time. Any search still
+# running after ARCHIVE_QUERY_TIMEOUT seconds is reported as timed out, so keep this below the web server's
+# worker timeout.
+ARCHIVE_QUERY_TIMEOUT = float(os.getenv('ARCHIVE_QUERY_TIMEOUT', '25'))
+ARCHIVE_QUERY_MAX_WORKERS = int(os.getenv('ARCHIVE_QUERY_MAX_WORKERS', '8'))
+# API token for the LCO Science Archive. When set, LCO searches log in with it, which gets them 1000 frames per
+# request instead of 100 and higher. Use an account with no proposal memberships, so that it only sees public frames.
+LCO_ARCHIVE_TOKEN = os.getenv('LCO_ARCHIVE_TOKEN', '')
+
 HEROIC_FRONT_END_BASE_URL = os.getenv('HEROIC_FRONT_END_BASE_URL', 'http://127.0.0.1:5173/')
 
 # Client ID (OIDC_RP_CLIENT_ID) and SECRET (OIDC_RP_CLIENT_SECRET)

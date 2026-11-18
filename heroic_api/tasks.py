@@ -94,7 +94,7 @@ def poll_rubin_schedule():
         'time': '25',
         'start': start.strftime('%Y-%m-%d %H:%M:%S'),
         'RESPONSEFORMAT': 'json',
-        'columns': 't_planning,target_name,s_ra,s_dec,s_fov,t_min,t_exptime,execution_status'
+        'columns': 't_planning,target_name,s_ra,s_dec,s_fov,t_min,t_exptime,execution_status,obs_id'
     }
     response = requests.get(settings.RUBIN_SCHEDULE_URL, params=params, timeout=RUBIN_REQUEST_TIMEOUT)
     response.raise_for_status()
@@ -115,7 +115,7 @@ def poll_rubin_schedule():
                 instrument=instrument,
                 coordinate=point,
                 target=visit['target_name'],
-                defaults={'planned': False, 'field': point.buffer(visit['s_fov']/2.0), 'extra': {'exposure_time': visit['t_exptime']}}
+                defaults={'planned': False, 'field': point.buffer(visit['s_fov']/2.0), 'extra': {'exposure_time': visit['t_exptime'], 'obs_id': visit['obs_id']}}
             )
         elif date > (datetime.now(timezone.utc) - timedelta(minutes=1)):
             # If this is in the future, i.e. a scheduled / planned visit, then collect them up to bulk add
